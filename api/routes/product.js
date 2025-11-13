@@ -1,0 +1,348 @@
+import express from "express";
+import prisma from "../lib/prisma.js";
+
+const router = express.Router();
+
+// Rota padrão GET - redireciona para list
+router.get("/", async (req, res) => {
+  try {
+    const produtos = await prisma.product.findMany({ where: { ativo: true }, orderBy: { dataInclusao: 'desc' } });
+    const num = (v) => Number(v);
+    res.json(produtos.map(p => ({ ...p, precoCusto: num(p.precoCusto), precoVenda: num(p.precoVenda) })));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Erro ao buscar produtos" });
+  }
+});
+
+// Rota para criar produto
+router.post("/create", async (req, res) => {
+  try {
+    const { nome, descricao, preco, precoVenda, precoCusto, categoria, tipo, grupo, unidade, estoque, quantidade, estoqueMinimo, ativo, dadosFiscais, imagem, tempoPreparoMinutos, disponivel, categoriaId, tipoId, unidadeMedidaId, groupId } = req.body;
+
+    const pv = precoVenda ?? preco ?? 0;
+    const pc = precoCusto ?? 0;
+    const qtd = quantidade ?? estoque ?? 0;
+    const un = unidade ?? "un";
+
+    const catId = Number(categoriaId);
+    const tipId = Number(tipoId);
+    const uniId = Number(unidadeMedidaId);
+    const grpId = Number(groupId);
+    let catNome = categoria;
+    if ((!catNome || !String(catNome).trim()) && Number.isInteger(catId) && catId > 0) {
+      const cat = await prisma.categoria.findUnique({ where: { id: catId } });
+      catNome = cat?.nome;
+    }
+
+    const novoProduto = await prisma.product.create({
+      data: {
+        nome,
+        descricao,
+        precoCusto: String(Number(pc).toFixed(2)),
+        precoVenda: String(Number(pv).toFixed(2)),
+        categoria: catNome,
+        tipo,
+        grupo,
+        categoriaId: Number.isInteger(catId) && catId > 0 ? catId : undefined,
+        tipoId: Number.isInteger(tipId) && tipId > 0 ? tipId : undefined,
+        groupId: Number.isInteger(grpId) && grpId > 0 ? grpId : undefined,
+        unidadeMedidaId: Number.isInteger(uniId) && uniId > 0 ? uniId : undefined,
+        unidade: un,
+        ativo: ativo !== undefined ? !!ativo : true,
+        dadosFiscais,
+        quantidade: Number(qtd) || 0,
+        imagem,
+        tempoPreparoMinutos: tempoPreparoMinutos ?? 0,
+        disponivel: disponivel ?? true
+      }
+    });
+    
+    res.status(201).json({ message: "Produto cadastrado com sucesso", product: novoProduto });
+  } catch (error) {
+    console.error('Erro ao criar produto:', error);
+    res.status(500).json({ error: "Erro ao cadastrar produto" });
+  }
+});
+
+// Rota para listar todos os produtos
+router.get("/list", async (req, res) => {
+  try {
+    const { categoriaId, categoria, tipoId, tipo, groupId, grupo, unidade } = req.query;
+    const where = { ativo: true };
+    const catId = Number(categoriaId);
+    const tipId = Number(tipoId);
+    const grpId = Number(groupId);
+    if (Number.isInteger(catId) && catId > 0) where.categoriaId = catId;
+    if (categoria) where.categoria = String(categoria);
+    if (Number.isInteger(tipId) && tipId > 0) where.tipoId = tipId;
+    if (tipo) where.tipo = String(tipo);
+    if (Number.isInteger(grpId) && grpId > 0) where.groupId = grpId;
+    if (grupo) where.grupo = String(grupo);
+    if (unidade) where.unidade = String(unidade);
+    const products = await prisma.product.findMany({ where, orderBy: { dataInclusao: 'desc' } });
+    const num = (v) => Number(v);
+    res.json(products.map(p => ({ ...p, precoCusto: num(p.precoCusto), precoVenda: num(p.precoVenda) })));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Erro ao listar produtos" });
+  }
+});
+
+// Categorias usadas efetivamente pelos produtos (para filtros confiáveis)
+router.get('/categories/used', async (req, res) => {
+  try {
+    const prods = await prisma.product.findMany({
+      where: { ativo: true },
+      select: { categoria: true, categoriaId: true }
+    });
+    const ids = new Set();
+    const names = new Set();
+    for (const p of prods) {
+      if (p.categoriaId && Number(p.categoriaId) > 0) ids.add(Number(p.categoriaId));
+      const nome = (p.categoria || '').trim();
+      if (nome) names.add(nome);
+    }
+    const idList = Array.from(ids);
+    const catRecords = idList.length > 0
+      ? await prisma.categoria.findMany({ where: { id: { in: idList } } })
+      : [];
+
+    const used = [];
+    // IDs resolvidos com nome
+    for (const rec of catRecords) {
+      used.push({ id: rec.id, label: rec.nome });
+      names.delete(rec.nome);
+    }
+    // Nomes sem ID
+    for (const nome of Array.from(names)) {
+      used.push({ id: null, label: nome });
+    }
+
+    // Ordenar por label
+    used.sort((a, b) => String(a.label).localeCompare(String(b.label)));
+
+    res.json(used);
+  } catch (error) {
+    console.error('Erro ao listar categorias usadas:', error);
+    res.status(500).json({ error: 'Erro ao listar categorias usadas' });
+  }
+});
+
+router.get('/types/used', async (req, res) => {
+  try {
+    const prods = await prisma.product.findMany({
+      where: { ativo: true },
+      select: { tipo: true, tipoId: true }
+    });
+    const ids = new Set();
+    const names = new Set();
+    for (const p of prods) {
+      if (p.tipoId && Number(p.tipoId) > 0) ids.add(Number(p.tipoId));
+      const nome = (p.tipo || '').trim();
+      if (nome) names.add(nome);
+    }
+    const idList = Array.from(ids);
+    const tipRecords = idList.length > 0
+      ? await prisma.tipo.findMany({ where: { id: { in: idList } } })
+      : [];
+
+    const used = [];
+    for (const rec of tipRecords) {
+      used.push({ id: rec.id, label: rec.nome });
+      names.delete(rec.nome);
+    }
+    for (const nome of Array.from(names)) {
+      used.push({ id: null, label: nome });
+    }
+
+    used.sort((a, b) => String(a.label).localeCompare(String(b.label)));
+
+    res.json(used);
+  } catch (error) {
+    console.error('Erro ao listar tipos usados:', error);
+    res.status(500).json({ error: 'Erro ao listar tipos usados' });
+  }
+});
+
+router.get('/groups/used', async (req, res) => {
+  try {
+    const prods = await prisma.product.findMany({
+      where: { ativo: true },
+      select: { grupo: true, groupId: true }
+    });
+    const ids = new Set();
+    const names = new Set();
+    for (const p of prods) {
+      if (p.groupId && Number(p.groupId) > 0) ids.add(Number(p.groupId));
+      const nome = (p.grupo || '').trim();
+      if (nome) names.add(nome);
+    }
+    const idList = Array.from(ids);
+    const grpRecords = idList.length > 0
+      ? await prisma.productGroup.findMany({ where: { id: { in: idList } } })
+      : [];
+
+    const used = [];
+    for (const rec of grpRecords) {
+      used.push({ id: rec.id, label: rec.nome });
+      names.delete(rec.nome);
+    }
+    for (const nome of Array.from(names)) {
+      used.push({ id: null, label: nome });
+    }
+
+    used.sort((a, b) => String(a.label).localeCompare(String(b.label)));
+
+    res.json(used);
+  } catch (error) {
+    console.error('Erro ao listar grupos usados:', error);
+    res.status(500).json({ error: 'Erro ao listar grupos usados' });
+  }
+});
+
+// Rota para buscar produto por ID
+router.get("/:id", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "ID inválido" });
+    }
+    const product = await prisma.product.findUnique({ where: { id } });
+    if (!product) {
+      return res.status(404).json({ error: "Produto não encontrado" });
+    }
+    const num = (v) => Number(v);
+    res.json({ ...product, precoCusto: num(product.precoCusto), precoVenda: num(product.precoVenda) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Erro ao buscar produto" });
+  }
+});
+
+// Rota para atualizar produto
+router.put("/update/:id", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "ID inválido" });
+    }
+
+    const { nome, descricao, precoCusto, precoVenda, categoria, tipo, grupo, unidade, ativo, dadosFiscais, quantidade, imagem, tempoPreparoMinutos, disponivel, preco, estoque, categoriaId, tipoId, unidadeMedidaId, groupId } = req.body;
+    
+    const updateData = {
+      nome,
+      descricao,
+      precoCusto: precoCusto !== undefined ? String(Number((precoCusto ?? preco) ?? 0).toFixed(2)) : undefined,
+      precoVenda: precoVenda !== undefined ? String(Number((precoVenda ?? preco) ?? 0).toFixed(2)) : undefined,
+      categoria,
+      tipo,
+      grupo,
+      unidade,
+      ativo,
+      dadosFiscais,
+      quantidade: quantidade !== undefined ? Number(quantidade ?? estoque ?? 0) : undefined,
+      imagem,
+      tempoPreparoMinutos,
+      disponivel,
+      categoriaId: categoriaId !== undefined ? (Number.isInteger(Number(categoriaId)) ? Number(categoriaId) : undefined) : undefined,
+      tipoId: tipoId !== undefined ? (Number.isInteger(Number(tipoId)) ? Number(tipoId) : undefined) : undefined,
+      groupId: groupId !== undefined ? (Number.isInteger(Number(groupId)) ? Number(groupId) : undefined) : undefined,
+      unidadeMedidaId: unidadeMedidaId !== undefined ? (Number.isInteger(Number(unidadeMedidaId)) ? Number(unidadeMedidaId) : undefined) : undefined
+    };
+
+    const updatedProduct = await prisma.product.update({ where: { id }, data: updateData });
+    
+    res.json({ message: 'Produto atualizado com sucesso', product: updatedProduct });
+  } catch (error) {
+    console.error('Erro ao atualizar produto:', error);
+    if (error.code === "P2025") {
+      return res.status(404).json({ message: 'Produto não encontrado' });
+    }
+    res.status(500).json({ message: 'Erro interno do servidor', error: error.message });
+  }
+});
+
+// Rota alternativa para atualizar produto (compatibilidade com frontend)
+router.put("/:id", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "ID inválido" });
+    }
+
+    const { nome, descricao, preco, precoVenda, precoCusto, categoria, tipo, grupo, unidade, estoque, quantidade, estoqueMinimo, ativo, categoriaId, tipoId, unidadeMedidaId, groupId } = req.body;
+    
+    const updateData = {
+      nome,
+      descricao,
+      precoCusto: String(Number((precoCusto ?? 0)).toFixed(2)),
+      precoVenda: String(Number((precoVenda ?? preco ?? 0)).toFixed(2)),
+      categoria,
+      tipo,
+      grupo,
+      unidade,
+      ativo,
+      quantidade: Number(quantidade ?? estoque ?? 0),
+      categoriaId: categoriaId !== undefined ? (Number.isInteger(Number(categoriaId)) ? Number(categoriaId) : undefined) : undefined,
+      tipoId: tipoId !== undefined ? (Number.isInteger(Number(tipoId)) ? Number(tipoId) : undefined) : undefined,
+      groupId: groupId !== undefined ? (Number.isInteger(Number(groupId)) ? Number(groupId) : undefined) : undefined,
+      unidadeMedidaId: unidadeMedidaId !== undefined ? (Number.isInteger(Number(unidadeMedidaId)) ? Number(unidadeMedidaId) : undefined) : undefined
+    };
+
+    const produtoAtualizado = await prisma.product.update({
+      where: { id },
+      data: updateData
+    });
+
+    res.json({ message: "Produto atualizado com sucesso", product: produtoAtualizado });
+  } catch (error) {
+    console.error('Erro ao atualizar produto:', error);
+    if (error.code === "P2025") {
+      return res.status(404).json({ error: "Produto não encontrado" });
+    }
+    res.status(500).json({ error: "Erro ao atualizar produto" });
+  }
+});
+
+// Deleção - optar por soft delete para manter histórico
+router.delete("/delete/:id", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "ID inválido" });
+    }
+
+    await prisma.product.update({ where: { id }, data: { ativo: false } });
+    
+    res.json({ message: "Produto removido com sucesso" });
+  } catch (error) {
+    console.error('Erro ao deletar produto:', error);
+    if (error.code === "P2025") {
+      return res.status(404).json({ error: "Produto não encontrado" });
+    }
+    res.status(500).json({ error: "Erro ao deletar produto" });
+  }
+});
+
+// Rota alternativa para deletar produto (compatibilidade com frontend)
+router.delete("/:id", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "ID inválido" });
+    }
+
+    await prisma.product.update({ where: { id }, data: { ativo: false } });
+
+    res.json({ message: "Produto removido com sucesso" });
+  } catch (error) {
+    console.error('Erro ao deletar produto:', error);
+    if (error.code === "P2025") {
+      return res.status(404).json({ error: "Produto não encontrado" });
+    }
+    res.status(500).json({ error: "Erro ao deletar produto" });
+  }
+});
+
+export default router;

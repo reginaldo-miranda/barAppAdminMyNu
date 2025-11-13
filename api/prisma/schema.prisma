@@ -1,0 +1,269 @@
+generator client {
+  provider = "prisma-client-js"
+  engineType = "binary"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum TipoUsuario {
+  admin
+  funcionario
+}
+
+model User {
+  id           Int         @id @default(autoincrement())
+  email        String      @unique
+  senha        String
+  nome         String
+  tipo         TipoUsuario @default(funcionario)
+  employeeId   Int?
+  permissoes   Json?
+  ativo        Boolean     @default(true)
+  dataInclusao DateTime    @default(now())
+  ultimoLogin  DateTime?
+}
+
+model Product {
+  id                  Int      @id @default(autoincrement())
+  nome                String
+  descricao           String?
+  precoCusto          Decimal  @db.Decimal(10, 2)
+  precoVenda          Decimal  @db.Decimal(10, 2)
+  categoria           String?
+  categoriaId         Int?
+  categoriaRel        Categoria? @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+  tipo                String?
+  tipoId              Int?
+  tipoRel             Tipo? @relation(fields: [tipoId], references: [id], onDelete: SetNull)
+  grupo               String?
+  groupId             Int?
+  grupoRel            ProductGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  unidadeMedidaId     Int?
+  unidadeRel          UnidadeMedida? @relation(fields: [unidadeMedidaId], references: [id], onDelete: SetNull)
+  unidade             String   @default("un")
+  ativo               Boolean  @default(true)
+  dadosFiscais        String?
+  quantidade          Int      @default(0)
+  imagem              String?
+  tempoPreparoMinutos Int      @default(0)
+  disponivel          Boolean  @default(true)
+  dataInclusao        DateTime @default(now())
+  saleItems           SaleItem[]
+}
+
+model ProductGroup {
+  id           Int      @id @default(autoincrement())
+  nome         String   @unique
+  descricao    String?
+  icone        String   @default("📦")
+  ativo        Boolean  @default(true)
+  dataInclusao DateTime @default(now())
+  products     Product[]
+}
+
+enum MesaStatus {
+  livre
+  ocupada
+  reservada
+  manutencao
+}
+
+enum MesaTipo {
+  interna
+  externa
+  vip
+  reservada
+  balcao
+}
+
+model Employee {
+  id           Int       @id @default(autoincrement())
+  nome         String
+  cpf          String?
+  email        String?
+  endereco     String?
+  bairro       String?
+  telefone     String?
+  cargo        String?
+  salario      Decimal?  @db.Decimal(10, 2)
+  dataAdmissao DateTime?
+  ativo        Boolean   @default(true)
+  dataInclusao DateTime  @default(now())
+  mesasResponsaveis Mesa[]
+  vendasFuncionario       Sale[]  @relation("SaleFuncionario")
+  vendasResponsavel       Sale[]  @relation("SaleResponsavel")
+  vendasAbertura          Sale[]  @relation("SaleFuncionarioAbertura")
+  caixasAbertura          Caixa[] @relation("CaixaFuncionarioAbertura")
+  caixasFechamento        Caixa[] @relation("CaixaFuncionarioFechamento")
+}
+
+model Customer {
+  id             Int       @id @default(autoincrement())
+  nome           String?
+  endereco       String?
+  cidade         String?
+  estado         String?
+  fone           String?
+  cpf            String    @unique
+  rg             String?
+  dataNascimento DateTime?
+  ativo          Boolean   @default(true)
+  dataInclusao   DateTime  @default(now())
+  vendas         Sale[]    @relation("SaleCliente")
+}
+
+model Mesa {
+  id                        Int          @id @default(autoincrement())
+  numero                    Int          @unique
+  nome                      String
+  capacidade                Int
+  status                    MesaStatus   @default(livre)
+  vendaAtualId              Int?         @unique
+  vendaAtual                Sale?        @relation("MesaVendaAtual", fields: [vendaAtualId], references: [id], onDelete: SetNull)
+  funcionarioResponsavelId  Int?
+  funcionarioResponsavel    Employee?    @relation(fields: [funcionarioResponsavelId], references: [id], onDelete: SetNull)
+  nomeResponsavel           String?
+  clientesAtuais            Int          @default(0)
+  horaAbertura              DateTime?
+  observacoes               String?
+  tipo                      MesaTipo     @default(interna)
+  ativo                     Boolean      @default(true)
+  createdAt                 DateTime     @default(now())
+  updatedAt                 DateTime     @updatedAt
+  vendas                    Sale[]       @relation("SaleMesa")
+}
+
+model Tipo {
+  id           Int      @id @default(autoincrement())
+  nome         String   @unique
+  descricao    String?
+  ativo        Boolean  @default(true)
+  dataInclusao DateTime @default(now())
+  products     Product[]
+}
+
+model UnidadeMedida {
+  id           Int      @id @default(autoincrement())
+  nome         String   @unique
+  sigla        String   @unique
+  descricao    String?
+  ativo        Boolean  @default(true)
+  dataInclusao DateTime @default(now())
+  products     Product[]
+}
+
+model Categoria {
+  id           Int      @id @default(autoincrement())
+  nome         String   @unique
+  descricao    String?
+  ativo        Boolean  @default(true)
+  dataInclusao DateTime @default(now())
+  products     Product[]
+}
+
+enum FormaPagamento {
+  dinheiro
+  cartao
+  pix
+}
+
+enum SaleStatus {
+  aberta
+  finalizada
+  cancelada
+}
+
+enum TipoVenda {
+  balcao
+  mesa
+  delivery
+  comanda
+}
+
+enum CaixaStatus {
+  aberto
+  fechado
+}
+
+model Sale {
+  id                      Int           @id @default(autoincrement())
+  funcionarioId           Int?
+  funcionario             Employee?     @relation("SaleFuncionario", fields: [funcionarioId], references: [id], onDelete: SetNull)
+  clienteId               Int?
+  cliente                 Customer?     @relation("SaleCliente", fields: [clienteId], references: [id], onDelete: SetNull)
+  mesaId                  Int?
+  mesa                    Mesa?         @relation("SaleMesa", fields: [mesaId], references: [id], onDelete: SetNull)
+  responsavelNome         String?
+  responsavelFuncionarioId Int?
+  responsavelFuncionario  Employee?     @relation("SaleResponsavel", fields: [responsavelFuncionarioId], references: [id], onDelete: SetNull)
+  funcionarioNome         String?
+  funcionarioAberturaNome String?
+  funcionarioAberturaId   Int?
+  funcionarioAbertura     Employee?     @relation("SaleFuncionarioAbertura", fields: [funcionarioAberturaId], references: [id], onDelete: SetNull)
+  numeroComanda           String?       @unique
+  nomeComanda             String?
+  tipoVenda               TipoVenda     @default(balcao)
+  subtotal                Decimal       @db.Decimal(10, 2)
+  desconto                Decimal       @db.Decimal(10, 2)
+  total                   Decimal       @db.Decimal(10, 2)
+  formaPagamento          FormaPagamento @default(dinheiro)
+  status                  SaleStatus    @default(aberta)
+  dataVenda               DateTime      @default(now())
+  dataFinalizacao         DateTime?
+  observacoes             String?
+  tempoPreparoEstimado    Int           @default(0)
+  impressaoCozinha        Boolean       @default(false)
+  impressaoBar            Boolean       @default(false)
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+  itens                   SaleItem[]
+  mesaVendaAtual          Mesa?         @relation("MesaVendaAtual")
+  caixaVendas             CaixaVenda[]
+}
+
+model SaleItem {
+  id            Int      @id @default(autoincrement())
+  saleId        Int
+  sale          Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId     Int?
+  product       Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  nomeProduto   String
+  quantidade    Int
+  precoUnitario Decimal  @db.Decimal(10, 2)
+  subtotal      Decimal  @db.Decimal(10, 2)
+}
+
+model Caixa {
+  id                     Int            @id @default(autoincrement())
+  dataAbertura           DateTime       @default(now())
+  dataFechamento         DateTime?
+  valorAbertura          Decimal        @db.Decimal(10, 2)
+  valorFechamento        Decimal?       @db.Decimal(10, 2)
+  totalVendas            Decimal        @db.Decimal(10, 2) @default(0)
+  totalDinheiro          Decimal        @db.Decimal(10, 2) @default(0)
+  totalCartao            Decimal        @db.Decimal(10, 2) @default(0)
+  totalPix               Decimal        @db.Decimal(10, 2) @default(0)
+  funcionarioAberturaId  Int
+  funcionarioAbertura    Employee       @relation("CaixaFuncionarioAbertura", fields: [funcionarioAberturaId], references: [id], onDelete: Restrict)
+  funcionarioFechamentoId Int?
+  funcionarioFechamento  Employee?      @relation("CaixaFuncionarioFechamento", fields: [funcionarioFechamentoId], references: [id], onDelete: SetNull)
+  status                 CaixaStatus    @default(aberto)
+  observacoes            String?
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+  vendas                 CaixaVenda[]
+}
+
+model CaixaVenda {
+  id             Int            @id @default(autoincrement())
+  caixaId        Int
+  caixa          Caixa          @relation(fields: [caixaId], references: [id], onDelete: Cascade)
+  vendaId        Int
+  venda          Sale           @relation(fields: [vendaId], references: [id], onDelete: Cascade)
+  valor          Decimal        @db.Decimal(10, 2)
+  formaPagamento FormaPagamento
+  dataVenda      DateTime
+}
