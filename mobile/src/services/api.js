@@ -74,7 +74,8 @@ function resolveApiBaseUrl() {
   if (Platform.OS === 'android') {
     return `http://10.0.2.2:${DEFAULT_PORT}/api`;
   }
-  return `http://localhost:${DEFAULT_PORT}/api`;
+  // Nunca retornar localhost em ambiente nativo; manter vazio para exigir detecção correta
+  return '';
 }
 
 // Primeiro: variável de ambiente pública
@@ -82,7 +83,7 @@ const ENV_BASE_URL = getEnvBaseUrl();
 
 // Segundo: override salvo em storage
 let initialBaseUrl = ENV_BASE_URL || resolveApiBaseUrl();
-const DEFAULT_TIMEOUT_MS = 7000;
+const DEFAULT_TIMEOUT_MS = 15000;
 
 const api = axios.create({
   baseURL: initialBaseUrl || '',
@@ -230,11 +231,23 @@ api.interceptors.response.use(
   })();
 
 // Helper: persistir override no storage (para ajustes via tela de Configurações)
-export async function setApiBaseUrl(url) {
-  await AsyncStorage.setItem(STORAGE_KEYS.API_BASE_URL, url);
-  initialBaseUrl = url;
-  api.defaults.baseURL = url;
-}
+export const setApiBaseUrl = async (url) => {
+  try {
+    if (!url) return false;
+    if (/^(http:\/\/|https:\/\/)?(localhost|127\.0\.0\.1)/i.test(url)) {
+      throw new Error('URL inválida: localhost não é permitido no mobile');
+    }
+    if (!/\/api\/?$/.test(url)) {
+      url = url.replace(/\/?$/, '') + '/api';
+    }
+    await AsyncStorage.setItem(STORAGE_KEYS.API_BASE_URL, url);
+    api.defaults.baseURL = url;
+    return true;
+  } catch (err) {
+    console.warn('setApiBaseUrl error:', err?.message || err);
+    return false;
+  }
+};
 
 // Permite limpar rapidamente o override salvo da baseURL
 export async function clearApiBaseUrl() {
@@ -263,15 +276,51 @@ export async function testApiConnection(baseUrl, apiKey) {
   try {
     const baseCandidate = baseUrl || ENV_BASE_URL || initialBaseUrl || '';
     const effectiveBase = String(baseCandidate).replace(/\/$/, '');
-    const url = `${effectiveBase}/tipo/list`;
+    const url = `${effectiveBase}/health`;
+
+    // Adiciona cabeçalhos para contornar o bloqueio do loca.lt quando usando API pública
+    const extraHeaders = {};
+    if (/loca\.lt/i.test(effectiveBase)) {
+      extraHeaders['bypass-tunnel-reminder'] = 'true';
+      extraHeaders['User-Agent'] = 'BarAppMobile/1.0';
+    }
+
     const res = await axios.get(url, {
       timeout: 15000,
       headers: {
         'Content-Type': 'application/json',
         ...(apiKey ? { 'X-API-Key': apiKey } : {}),
+        ...extraHeaders,
       },
     });
-    return { ok: true, status: res.status };
+    return { ok: true, status: res.status, data: res.data };
+  } catch (error) {
+    const status = error?.response?.status ?? 0;
+    const reason = error?.response?.data ?? error?.message ?? 'Erro desconhecido';
+    return { ok: false, status, reason };
+  }
+}
+
+// Novo helper: alternar DB_TARGET no servidor atual (local/railway)
+export async function switchServerDbTarget(baseUrl, target) {
+  try {
+    const baseCandidate = baseUrl || api.defaults.baseURL || ENV_BASE_URL || initialBaseUrl || '';
+    const effectiveBase = String(baseCandidate).replace(/\/$/, '');
+    const url = `${effectiveBase}/admin/db-target`;
+
+    // Adiciona cabeçalhos para contornar o bloqueio do loca.lt quando usando API pública
+    const extraHeaders = {};
+    if (/loca\.lt/i.test(effectiveBase)) {
+      extraHeaders['bypass-tunnel-reminder'] = 'true';
+      extraHeaders['User-Agent'] = 'BarAppMobile/1.0';
+    }
+
+    const res = await axios.post(
+      url,
+      { target },
+      { timeout: 15000, headers: { 'Content-Type': 'application/json', ...extraHeaders } }
+    );
+    return { ok: true, status: res.status, data: res.data };
   } catch (error) {
     const status = error?.response?.status ?? 0;
     const reason = error?.response?.data ?? error?.message ?? 'Erro desconhecido';

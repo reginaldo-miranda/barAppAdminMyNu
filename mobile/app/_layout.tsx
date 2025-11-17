@@ -1,7 +1,29 @@
+import 'react-native-gesture-handler';
+import 'react-native-reanimated';
+import { Platform } from 'react-native';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
+
+// Mitigar erro de timeout do FontFaceObserver no Web: forçar resolução imediata
+if (typeof window !== 'undefined' && Platform.OS === 'web') {
+  try {
+    const FFO = (window as any).FontFaceObserver;
+    if (FFO && FFO.prototype && typeof FFO.prototype.load === 'function') {
+      FFO.prototype.load = function () {
+        return Promise.resolve(true);
+      };
+    }
+    // Patches adicionais: garantir que document.fonts.load resolva imediatamente
+    if (typeof document !== 'undefined' && (document as any).fonts && typeof (document as any).fonts.load === 'function') {
+      const originalLoad = (document as any).fonts.load;
+      (document as any).fonts.load = function (...args: any[]) {
+        // Resolve instantaneamente com um array de tamanho >= 1 para satisfazer verificações internas
+        return Promise.resolve([{}]);
+      };
+    }
+  } catch {}
+}
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider } from '../src/contexts/AuthContext';
@@ -9,7 +31,7 @@ import { ConfirmationProvider } from '../src/contexts/ConfirmationContext';
 import { ProductProvider } from '../src/contexts/ProductContext';
 
 export const unstable_settings = {
-  anchor: 'index',
+  initialRouteName: 'index',
 };
 
 export default function RootLayout() {

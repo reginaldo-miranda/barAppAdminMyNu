@@ -1,0 +1,10 @@
+{
+  "name": "barapp-admin-mynu",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "start": "bash ./start-all.sh",
+    "start:api": "bash ./start-api.sh",
+    "start:mobile": "bash ./start-mobile.sh"
+  }
+}
