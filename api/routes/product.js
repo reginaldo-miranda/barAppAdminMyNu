@@ -1,11 +1,12 @@
 import express from "express";
-import prisma from "../lib/prisma.js";
+import { getActivePrisma } from "../lib/prisma.js";
 
 const router = express.Router();
 
 // Rota padrão GET - redireciona para list
 router.get("/", async (req, res) => {
   try {
+    const prisma = getActivePrisma();
     const produtos = await prisma.product.findMany({ where: { ativo: true }, orderBy: { dataInclusao: 'desc' } });
     const num = (v) => Number(v);
     res.json(produtos.map(p => ({ ...p, precoCusto: num(p.precoCusto), precoVenda: num(p.precoVenda) })));
@@ -18,6 +19,7 @@ router.get("/", async (req, res) => {
 // Rota para criar produto
 router.post("/create", async (req, res) => {
   try {
+    const prisma = getActivePrisma();
     const { nome, descricao, preco, precoVenda, precoCusto, categoria, tipo, grupo, unidade, estoque, quantidade, estoqueMinimo, ativo, dadosFiscais, imagem, tempoPreparoMinutos, disponivel, categoriaId, tipoId, unidadeMedidaId, groupId } = req.body;
 
     const pv = precoVenda ?? preco ?? 0;
@@ -68,6 +70,7 @@ router.post("/create", async (req, res) => {
 // Rota para listar todos os produtos
 router.get("/list", async (req, res) => {
   try {
+    const prisma = getActivePrisma();
     const { categoriaId, categoria, tipoId, tipo, groupId, grupo, unidade } = req.query;
     const where = { ativo: true };
     const catId = Number(categoriaId);
@@ -80,18 +83,24 @@ router.get("/list", async (req, res) => {
     if (Number.isInteger(grpId) && grpId > 0) where.groupId = grpId;
     if (grupo) where.grupo = String(grupo);
     if (unidade) where.unidade = String(unidade);
-    const products = await prisma.product.findMany({ where, orderBy: { dataInclusao: 'desc' } });
+    let products = [];
+    try {
+      products = await prisma.product.findMany({ where, orderBy: { dataInclusao: 'desc' } });
+    } catch (e) {
+      products = await prisma.product.findMany({ where, orderBy: { id: 'desc' } });
+    }
     const num = (v) => Number(v);
     res.json(products.map(p => ({ ...p, precoCusto: num(p.precoCusto), precoVenda: num(p.precoVenda) })));
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Erro ao listar produtos" });
+    console.error('Erro ao listar produtos:', error?.message || error);
+    res.status(500).json({ error: "Erro ao listar produtos", detail: String(error?.message || '') });
   }
 });
 
 // Categorias usadas efetivamente pelos produtos (para filtros confiáveis)
 router.get('/categories/used', async (req, res) => {
   try {
+    const prisma = getActivePrisma();
     const prods = await prisma.product.findMany({
       where: { ativo: true },
       select: { categoria: true, categoriaId: true }
@@ -131,6 +140,7 @@ router.get('/categories/used', async (req, res) => {
 
 router.get('/types/used', async (req, res) => {
   try {
+    const prisma = getActivePrisma();
     const prods = await prisma.product.findMany({
       where: { ativo: true },
       select: { tipo: true, tipoId: true }
@@ -167,6 +177,7 @@ router.get('/types/used', async (req, res) => {
 
 router.get('/groups/used', async (req, res) => {
   try {
+    const prisma = getActivePrisma();
     const prods = await prisma.product.findMany({
       where: { ativo: true },
       select: { grupo: true, groupId: true }
@@ -204,6 +215,7 @@ router.get('/groups/used', async (req, res) => {
 // Rota para buscar produto por ID
 router.get("/:id", async (req, res) => {
   try {
+    const prisma = getActivePrisma();
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) {
       return res.status(400).json({ error: "ID inválido" });
@@ -223,6 +235,7 @@ router.get("/:id", async (req, res) => {
 // Rota para atualizar produto
 router.put("/update/:id", async (req, res) => {
   try {
+    const prisma = getActivePrisma();
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) {
       return res.status(400).json({ error: "ID inválido" });
@@ -266,6 +279,7 @@ router.put("/update/:id", async (req, res) => {
 // Rota alternativa para atualizar produto (compatibilidade com frontend)
 router.put("/:id", async (req, res) => {
   try {
+    const prisma = getPrisma();
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) {
       return res.status(400).json({ error: "ID inválido" });
@@ -308,6 +322,7 @@ router.put("/:id", async (req, res) => {
 // Deleção - optar por soft delete para manter histórico
 router.delete("/delete/:id", async (req, res) => {
   try {
+    const prisma = getPrisma();
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) {
       return res.status(400).json({ error: "ID inválido" });
@@ -328,6 +343,7 @@ router.delete("/delete/:id", async (req, res) => {
 // Rota alternativa para deletar produto (compatibilidade com frontend)
 router.delete("/:id", async (req, res) => {
   try {
+    const prisma = getPrisma();
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) {
       return res.status(400).json({ error: "ID inválido" });

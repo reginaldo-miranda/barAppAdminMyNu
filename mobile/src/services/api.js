@@ -328,7 +328,7 @@ export async function switchServerDbTarget(baseUrl, target) {
   }
 }
 
-export const API_URL = initialBaseUrl;
+export const API_URL = getCurrentBaseUrl();
 export default api;
 
 // Serviços específicos (restaurados)
@@ -468,3 +468,12 @@ export const userService = {
   updateStatus: (id, ativo) => api.put(`/user/${id}/status`, { ativo }),
   delete: (id) => api.delete(`/user/${id}`),
 };
+
+export function getCurrentBaseUrl() {
+  try {
+    const current = api.defaults.baseURL || ENV_BASE_URL || resolveApiBaseUrl() || '';
+    return current || '';
+  } catch {
+    return api.defaults.baseURL || '';
+  }
+}

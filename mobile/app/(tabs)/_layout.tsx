@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 
 import { View, ActivityIndicator } from 'react-native';
 
-import { HapticTab } from '@/components/haptic-tab';
+import { HapticTab } from '../../components/haptic-tab';
 import ProductsTabButton from '../../src/components/ProductsTabButton';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { SafeIcon } from '../../components/SafeIcon';

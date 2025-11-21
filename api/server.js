@@ -75,7 +75,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // Novo endpoint: alternar alvo do banco (local/railway) dinamicamente
-import prisma, { switchDbTarget } from "./lib/prisma.js";
+import prisma, { switchDbTarget, getProductsForTarget, getSchemaSummaryForTarget } from "./lib/prisma.js";
 app.post('/api/admin/db-target', async (req, res) => {
   try {
     const raw = (req.body?.target || '').toString().toLowerCase();
@@ -107,6 +107,40 @@ app.post('/api/admin/db-target', async (req, res) => {
   } catch (err) {
     console.error('Erro ao alternar DB_TARGET:', err);
     return res.status(500).json({ ok: false, message: 'Erro ao alternar base.' });
+  }
+});
+
+app.get('/api/admin/compare/products', async (req, res) => {
+  try {
+    const local = await getProductsForTarget('local');
+    const railway = await getProductsForTarget('railway');
+    const pick = (arr) => arr.map((p) => p.nome).slice(0, 10);
+    res.json({
+      ok: true,
+      local: { count: local.length, sample: pick(local) },
+      railway: { count: railway.length, sample: pick(railway) }
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false });
+  }
+});
+
+app.get('/api/admin/schema/diff', async (req, res) => {
+  try {
+    const local = await getSchemaSummaryForTarget('local');
+    const railway = await getSchemaSummaryForTarget('railway');
+    const diff = {};
+    const allTables = Array.from(new Set([...Object.keys(local), ...Object.keys(railway)]));
+    for (const table of allTables) {
+      const lc = (local[table] || []).map(c => c.field);
+      const rw = (railway[table] || []).map(c => c.field);
+      const missingInRailway = lc.filter(f => !rw.includes(f));
+      const extraInRailway = rw.filter(f => !lc.includes(f));
+      diff[table] = { missingInRailway, extraInRailway };
+    }
+    res.json({ ok: true, diff, local, railway });
+  } catch (e) {
+    res.status(500).json({ ok: false });
   }
 });
 

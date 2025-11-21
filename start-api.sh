@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo "🚀 Iniciando API do Sistema Bar..."
-API_DIR="/Users/reginaldomiranda/Documents/barAppAdminMyNu_old/api"
+API_DIR="/Users/reginaldomiranda/Documents/barAppAdminMyNu/api"
 cd "$API_DIR" || { echo "❌ Não foi possível acessar $API_DIR"; exit 1; }
 
 # Verificar se .env existe
@@ -101,7 +101,10 @@ if [ ! -d "node_modules" ]; then
   npm install
 fi
 
-# Limpar cache mínimo e regenerar Prisma Client
+# Aplicar migrations e regenerar Prisma Client
+echo "🧩 Aplicando migrations do Prisma..."
+npm run prisma:migrate
+
 echo "🧹 Limpando cache do Prisma e regenerando client..."
 rm -rf node_modules/.prisma >/dev/null 2>&1
 npm run prisma:generate

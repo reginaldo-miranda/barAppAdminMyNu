@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
+import { events } from '../../src/utils/eventBus';
+import { testApiConnection, getCurrentBaseUrl } from '../../src/services/api';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { useProduct } from '../../src/contexts/ProductContext';
 import { productService, categoryService } from '../../src/services/api';
@@ -52,6 +54,8 @@ export default function ListagemProdutos() {
   const [selectedCategory, setSelectedCategory] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [dbTarget, setDbTarget] = useState('');
+  const [apiHost, setApiHost] = useState('');
 
   const loadProdutos = async () => {
     try {
@@ -125,6 +129,31 @@ export default function ListagemProdutos() {
       }
     }, [hasPermission])
   );
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const base = getCurrentBaseUrl();
+        const res = await testApiConnection(base, undefined);
+        if (res?.ok) {
+          const host = new URL(base).hostname;
+          setApiHost(host);
+          setDbTarget(String(res?.data?.dbTarget || ''));
+        }
+      } catch {}
+    })();
+    const off = events.on('dbTargetChanged', async () => {
+      const base = getCurrentBaseUrl();
+      const res = await testApiConnection(base, undefined);
+      if (res?.ok) {
+        const host = new URL(base).hostname;
+        setApiHost(host);
+        setDbTarget(String(res?.data?.dbTarget || ''));
+      }
+      await loadProdutos();
+    });
+    return () => { off && off(); };
+  }, []);
 
   // Verificar permissões
   if (!hasPermission('produtos')) {
@@ -324,7 +353,7 @@ export default function ListagemProdutos() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#2196F3" />
         </TouchableOpacity>
-        <Text style={styles.title}>Produtos</Text>
+        <Text style={styles.title}>Produtos ({filteredProdutos.length}) • Base: {dbTarget ? dbTarget.toUpperCase() : 'N/A'}</Text>
         <TouchableOpacity 
           onPress={() => router.push('/produtos/cadastro' as any)} 
           style={styles.addButton}

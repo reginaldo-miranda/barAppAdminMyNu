@@ -22,6 +22,8 @@ import { productService, categoryService, typeService, unidadeMedidaService } fr
 import { useAuth } from '../../src/contexts/AuthContext';
 import SearchAndFilter from '../../src/components/SearchAndFilter';
 import ScreenIdentifier from '../../src/components/ScreenIdentifier';
+import { events } from '../../src/utils/eventBus';
+import { testApiConnection, getCurrentBaseUrl } from '../../src/services/api';
 
 const { width } = Dimensions.get('window');
 
@@ -42,6 +44,7 @@ interface Product {
 
 interface Categoria {
   _id: string;
+  id?: string;
   nome: string;
   descricao: string;
   ativo: boolean;
@@ -49,12 +52,14 @@ interface Categoria {
 
 interface Tipo {
   _id: string;
+  id?: string;
   nome: string;
   ativo: boolean;
 }
 
 interface UnidadeMedida {
   _id: string;
+  id?: string;
   nome: string;
   sigla: string;
   ativo: boolean;
@@ -74,6 +79,8 @@ export default function AdminProdutosScreen() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [sortBy, setSortBy] = useState<'nome' | 'categoria' | 'preco'>('nome');
   const [filterActive, setFilterActive] = useState<boolean | null>(null);
+  const [dbTarget, setDbTarget] = useState('');
+  const [apiHost, setApiHost] = useState('');
 
   // Filtros para o SearchAndFilter
   const categoryFilters = [
@@ -125,6 +132,29 @@ export default function AdminProdutosScreen() {
     }
     loadInitialData();
   }, []);
+
+  useEffect(() => {
+    const off = events.on('dbTargetChanged', () => {
+      loadInitialData();
+    });
+    return () => { off && off(); };
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const base = getCurrentBaseUrl();
+        const res = await testApiConnection(base, undefined);
+        if (res?.ok) {
+          const host = new URL(base).hostname;
+          setApiHost(host);
+          setDbTarget(String(res?.data?.dbTarget || ''));
+        }
+      } catch {}
+    })();
+  }, []);
+
+  // Alternância de base deve ocorrer apenas na tela de Login conforme requisitos.
 
   const loadInitialData = async () => {
     await Promise.all([
@@ -405,6 +435,9 @@ export default function AdminProdutosScreen() {
 
   const renderHeader = () => (
     <View style={styles.headerContainer}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+        <Text style={{ fontSize: 12, color: '#666' }}>Base: {dbTarget ? dbTarget.toUpperCase() : 'N/A'} • API: {apiHost || 'N/A'}</Text>
+      </View>
       {/* Barra de busca e filtros */}
       <View style={styles.searchSection}>
         <View style={{ flex: 1 }}>
@@ -485,6 +518,10 @@ export default function AdminProdutosScreen() {
         <View style={styles.statItem}>
           <Text style={styles.statNumber}>{new Set(products.map(p => p.categoria)).size}</Text>
           <Text style={styles.statLabel}>Categorias</Text>
+        </View>
+        <View style={styles.statItem}>
+          <Text style={styles.statNumber}>{filteredProducts.length}</Text>
+          <Text style={styles.statLabel}>Exibidos</Text>
         </View>
       </View>
     </View>
