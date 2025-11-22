@@ -43,11 +43,11 @@ export default function ComandasAbertasScreen() {
   };
   const calcSaleTotal = (sale: any): number => {
     const t = toNum(sale?.total);
-    if (t > 0 || (typeof sale?.total !== 'undefined' && Number.isFinite(t))) {
-      return t;
-    }
+    if (t > 0) return t;
     const itens = Array.isArray(sale?.itens) ? sale.itens : [];
-    return itens.reduce((sum: number, it: any) => sum + toNum(it?.subtotal ?? (toNum(it?.quantidade) * toNum(it?.precoUnitario))), 0);
+    const subtotal = itens.reduce((sum: number, it: any) => sum + toNum(it?.subtotal ?? (toNum(it?.quantidade) * toNum(it?.precoUnitario))), 0);
+    const desconto = toNum(sale?.desconto);
+    return Math.max(0, subtotal - (Number.isFinite(desconto) ? desconto : 0));
   };
   const formatMoney = (v: any): string => toNum(v).toFixed(2);
 
@@ -75,12 +75,7 @@ export default function ComandasAbertasScreen() {
     try {
       setLoading(true);
       const response = await comandaService.getAll();
-      console.log('Resposta da API:', response.data);
-      // Carregar todas as comandas do tipo comanda (não apenas abertas para permitir filtros)
-      const todasComandas = response.data?.filter((venda: Comanda) => 
-        venda.tipoVenda === 'comanda'
-      ) || [];
-
+      const todasComandas = response.data?.filter((venda: Comanda) => venda.tipoVenda === 'comanda') || [];
       setComandas(todasComandas);
     } catch (error: any) {
       console.error('Erro ao carregar comandas:', error);
@@ -129,7 +124,7 @@ export default function ComandasAbertasScreen() {
   useFocusEffect(useCallback(() => {
     const intervalId = setInterval(() => {
       loadComandas();
-    }, 5000);
+    }, 2000);
     return () => clearInterval(intervalId);
   }, [loadComandas]));
 

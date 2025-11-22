@@ -37,6 +37,20 @@ export default function LoginScreen() {
 
   // Tentativa automática de conexão LAN ao selecionar/estar em 'lan'
   const autoLanAttemptedRef = useRef(false);
+  const safeHost = (base: string) => {
+    try {
+      const h = new URL(base).hostname;
+      if (h === 'localhost' || h === '127.0.0.1' || h === '::1') {
+        const envHost = (typeof process !== 'undefined' ? (process as any)?.env?.REACT_NATIVE_PACKAGER_HOSTNAME : '') || '';
+        const lan = getLanBaseUrl();
+        const alt = envHost || lan || '';
+        if (alt) {
+          try { return new URL(String(alt).includes('http') ? alt : `http://${alt}`).hostname; } catch { return alt.split(':')[0]; }
+        }
+      }
+      return h;
+    } catch { return ''; }
+  };
   useEffect(() => {
     (async () => {
       if (autoLanAttemptedRef.current) return;
@@ -62,7 +76,7 @@ export default function LoginScreen() {
           if (res.ok) {
             setBaseStatus('ok');
             const dbTarget = res?.data?.dbTarget || (initial.includes('railway') ? 'railway' : 'local');
-            const host = new URL(initial).hostname;
+            const host = safeHost(initial);
             setActiveDbLabel(`API • ${host} | DB • ${String(dbTarget).toUpperCase()}`);
             setBaseMessage(`Sucesso: Conexão validada! API: ${host} • DB: ${String(dbTarget).toUpperCase()}`);
             setShowDbModal(false);
@@ -173,7 +187,7 @@ export default function LoginScreen() {
 
       // Validar saúde com tentativas/backoff
       const res = await retryTestApi(autoUrl, 8, 1000);
-      const apiHost = new URL(autoUrl).hostname;
+      const apiHost = safeHost(autoUrl);
       if (res.ok) {
         const detectedDbTarget = String(res?.data?.dbTarget || 'local').toUpperCase();
         setBaseStatus('ok');
@@ -321,7 +335,7 @@ export default function LoginScreen() {
 
       if (result.ok) {
         setBaseStatus('ok');
-        const host = new URL(targetUrl!).hostname;
+          const host = safeHost(targetUrl!);
         const dbTargetRaw = (result as any)?.data?.dbTarget || (dbOption === 'railway' ? 'railway' : 'local');
         const dbTarget = String(dbTargetRaw).toUpperCase();
         setActiveDbLabel(`API • ${host} | DB • ${dbTarget}`);
@@ -350,7 +364,7 @@ export default function LoginScreen() {
       if (base && !isLocalHost(base)) {
         const res = await retryTestApi(base, 4, 1000);
         if (res?.ok) {
-          const host = new URL(base).hostname;
+          const host = safeHost(base);
           const dbTargetRaw = res?.data?.dbTarget || 'local';
           const dbTarget = String(dbTargetRaw).toUpperCase();
           setBaseStatus('ok');
@@ -365,7 +379,7 @@ export default function LoginScreen() {
       if (base && !isLocalHost(base)) {
         const res2 = await retryTestApi(base, 6, 1000);
         if (res2?.ok) {
-          const host = new URL(base).hostname;
+          const host = safeHost(base);
           const dbTargetRaw = res2?.data?.dbTarget || 'local';
           const dbTarget = String(dbTargetRaw).toUpperCase();
           setBaseStatus('ok');

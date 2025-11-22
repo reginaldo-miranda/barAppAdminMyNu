@@ -1,12 +1,13 @@
 import express from 'express';
 
-import prisma from '../lib/prisma.js';
+import { getActivePrisma } from '../lib/prisma.js';
 
 const router = express.Router();
 
 // Criar nova venda
 router.post('/create', async (req, res) => {
   try {
+    const prisma = getActivePrisma();
     const { funcionario, cliente, mesa, tipoVenda, nomeComanda, valorTotal, observacoes } = req.body;
 
     // Verificar se funcionário foi informado
@@ -202,6 +203,7 @@ const mapSales = (arr) => (Array.isArray(arr) ? arr.map(mapSaleResponse) : arr);
 // Listar vendas abertas (Prisma)
 router.get('/open', async (req, res) => {
   try {
+    const prisma = getActivePrisma();
     const vendasAbertas = await prisma.sale.findMany({
       where: { status: 'aberta' },
       include: {
@@ -219,9 +221,54 @@ router.get('/open', async (req, res) => {
   }
 });
 
+// Versão mínima e rápida das vendas abertas com totais agregados
+router.get('/open-min', async (req, res) => {
+  try {
+    const prisma = getActivePrisma();
+    const vendas = await prisma.sale.findMany({
+      where: { status: 'aberta' },
+      select: {
+        id: true,
+        status: true,
+        tipoVenda: true,
+        nomeComanda: true,
+        funcionario: { select: { nome: true } },
+        cliente: { select: { nome: true } },
+        desconto: true,
+        itens: { select: { quantidade: true, precoUnitario: true, subtotal: true } },
+      },
+      orderBy: { dataVenda: 'desc' },
+      take: 100,
+    });
+    // agregar total e itensCount
+    const results = vendas.map(v => {
+      const itens = Array.isArray(v.itens) ? v.itens : [];
+      const subtotal = itens.reduce((acc, it) => acc + Number(it.subtotal ?? (Number(it.quantidade) * Number(it.precoUnitario))), 0);
+      const descontoNum = Number(v.desconto || 0);
+      const total = Math.max(0, subtotal - descontoNum);
+      return {
+        _id: String(v.id),
+        id: v.id,
+        status: v.status,
+        tipoVenda: v.tipoVenda,
+        nomeComanda: v.nomeComanda,
+        funcionario: v.funcionario ? { nome: v.funcionario.nome } : null,
+        cliente: v.cliente ? { nome: v.cliente.nome } : null,
+        itensCount: itens.length,
+        total,
+      };
+    });
+    res.json(results);
+  } catch (error) {
+    console.error('Erro ao buscar vendas abertas (min):', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
 // Listar todas as vendas (com filtros opcionais) - Prisma
 router.get('/list', async (req, res) => {
   try {
+    const prisma = getActivePrisma();
     const { status, funcionario, cliente, dataInicio, dataFim } = req.query;
     const where = {};
 
@@ -257,6 +304,7 @@ router.get('/list', async (req, res) => {
 // Buscar vendas finalizadas por período (Prisma)
 router.get('/finalizadas', async (req, res) => {
   try {
+    const prisma = getActivePrisma();
     const { dataInicio, dataFim } = req.query;
 
     const where = { status: 'finalizada' };
@@ -286,6 +334,7 @@ router.get('/finalizadas', async (req, res) => {
 // Buscar vendas por mesa (Prisma)
 router.get('/mesa/:mesaId', async (req, res) => {
   try {
+    const prisma = getActivePrisma();
     const mesaId = Number(req.params.mesaId);
     if (!Number.isInteger(mesaId) || mesaId <= 0) {
       return res.status(400).json({ error: 'Mesa inválida' });
@@ -312,6 +361,7 @@ router.get('/mesa/:mesaId', async (req, res) => {
 // Buscar venda por ID (Prisma)
 router.get('/:id', async (req, res) => {
   try {
+    const prisma = getActivePrisma();
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) {
       return res.status(400).json({ error: 'ID inválido' });
@@ -341,6 +391,7 @@ router.get('/:id', async (req, res) => {
 // Adicionar item à venda (Prisma)
 router.post('/:id/item', async (req, res) => {
   try {
+    const prisma = getActivePrisma();
     const id = Number(req.params.id);
     const { produtoId, quantidade } = req.body;
     console.log('[SALE] POST /:id/item', { id, produtoId, quantidade });
@@ -410,6 +461,7 @@ router.post('/:id/item', async (req, res) => {
 // Remover item da venda (Prisma)
 router.delete('/:id/item/:produtoId', async (req, res) => {
   try {
+    const prisma = getActivePrisma();
     const id = Number(req.params.id);
     const prodId = Number(req.params.produtoId);
     console.log('[SALE] DELETE /:id/item/:produtoId', { id, produtoId: prodId });
@@ -455,6 +507,7 @@ router.delete('/:id/item/:produtoId', async (req, res) => {
 // Atualizar quantidade de item (Prisma)
 router.put('/:id/item/:produtoId', async (req, res) => {
   try {
+    const prisma = getActivePrisma();
     const id = Number(req.params.id);
     const prodId = Number(req.params.produtoId);
     const { quantidade } = req.body;
@@ -509,6 +562,7 @@ router.put('/:id/item/:produtoId', async (req, res) => {
 // Aplicar desconto (Prisma)
 router.put('/:id/discount', async (req, res) => {
   try {
+    const prisma = getActivePrisma();
     const id = Number(req.params.id);
     const { desconto } = req.body;
 
@@ -550,6 +604,7 @@ router.put('/:id/discount', async (req, res) => {
 // Finalizar venda
 router.put('/:id/finalize', async (req, res) => {
   try {
+    const prisma = getActivePrisma();
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) {
       return res.status(400).json({ error: 'ID inválido' });
@@ -732,6 +787,7 @@ router.put('/:id/finalize', async (req, res) => {
 // Cancelar venda (Prisma)
 router.put('/:id/cancel', async (req, res) => {
   try {
+    const prisma = getActivePrisma();
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) {
       return res.status(400).json({ error: 'ID inválido' });
@@ -784,6 +840,7 @@ router.put('/:id/cancel', async (req, res) => {
 // Listar todas as vendas (rota alternativa) com Prisma
 router.get('/', async (req, res) => {
   try {
+    const prisma = getActivePrisma();
     const { status, funcionario, cliente, dataInicio, dataFim } = req.query;
     const where = {};
 

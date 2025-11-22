@@ -412,6 +412,7 @@ export const saleService = {
     return api.put(`/sale/${id}/finalize`, body);
   },
   open: () => api.get('/sale/open'),
+  openMin: () => api.get('/sale/open-min'),
   list: (params) => api.get('/sale/list', { params }),
   getAll: () => api.get('/sale/list'),
   getById: (id) => api.get(`/sale/${id}`),
