@@ -10,7 +10,13 @@ const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
 
 const getEnvBaseUrl = () => {
   try {
-    return typeof process !== 'undefined' ? process.env?.EXPO_PUBLIC_API_URL : undefined;
+    const v = typeof process !== 'undefined' ? process.env?.EXPO_PUBLIC_API_URL : undefined;
+    if (!v) return undefined;
+    try {
+      const u = new URL(String(v));
+      if (LOCAL_HOSTNAMES.has(u.hostname)) return undefined;
+    } catch {}
+    return v;
   } catch {
     return undefined;
   }
@@ -36,8 +42,11 @@ function resolveApiBaseUrl() {
 
   // Ambiente Web
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    const hostname = window.location.hostname || 'localhost';
-    return `http://${hostname}:${DEFAULT_PORT}/api`;
+    const hostname = window.location.hostname || '';
+    if (hostname && !LOCAL_HOSTNAMES.has(hostname)) {
+      return `http://${hostname}:${DEFAULT_PORT}/api`;
+    }
+    return '';
   }
 
   // Expo Go / Native: múltiplos fallbacks
@@ -278,19 +287,11 @@ export async function testApiConnection(baseUrl, apiKey) {
     const effectiveBase = String(baseCandidate).replace(/\/$/, '');
     const url = `${effectiveBase}/health`;
 
-    // Adiciona cabeçalhos para contornar o bloqueio do loca.lt quando usando API pública
-    const extraHeaders = {};
-    if (/loca\.lt/i.test(effectiveBase)) {
-      extraHeaders['bypass-tunnel-reminder'] = 'true';
-      extraHeaders['User-Agent'] = 'BarAppMobile/1.0';
-    }
-
     const res = await axios.get(url, {
       timeout: 15000,
       headers: {
         'Content-Type': 'application/json',
         ...(apiKey ? { 'X-API-Key': apiKey } : {}),
-        ...extraHeaders,
       },
     });
     return { ok: true, status: res.status, data: res.data };
@@ -308,17 +309,10 @@ export async function switchServerDbTarget(baseUrl, target) {
     const effectiveBase = String(baseCandidate).replace(/\/$/, '');
     const url = `${effectiveBase}/admin/db-target`;
 
-    // Adiciona cabeçalhos para contornar o bloqueio do loca.lt quando usando API pública
-    const extraHeaders = {};
-    if (/loca\.lt/i.test(effectiveBase)) {
-      extraHeaders['bypass-tunnel-reminder'] = 'true';
-      extraHeaders['User-Agent'] = 'BarAppMobile/1.0';
-    }
-
     const res = await axios.post(
       url,
       { target },
-      { timeout: 15000, headers: { 'Content-Type': 'application/json', ...extraHeaders } }
+      { timeout: 15000, headers: { 'Content-Type': 'application/json' } }
     );
     return { ok: true, status: res.status, data: res.data };
   } catch (error) {
@@ -413,6 +407,7 @@ export const saleService = {
   },
   open: () => api.get('/sale/open'),
   openMin: () => api.get('/sale/open-min'),
+  updates: (since) => api.get(`/sale/updates${since ? `?since=${since}` : ''}`),
   list: (params) => api.get('/sale/list', { params }),
   getAll: () => api.get('/sale/list'),
   getById: (id) => api.get(`/sale/${id}`),
@@ -476,5 +471,108 @@ export function getCurrentBaseUrl() {
     return current || '';
   } catch {
     return api.defaults.baseURL || '';
+  }
+}
+
+export function getWsUrl() {
+  try {
+    const base = getCurrentBaseUrl();
+    const u = new URL(String(base));
+    const host = u.hostname;
+    const port = (process.env?.WS_PORT && Number(process.env.WS_PORT)) || 4001;
+    if (LOCAL_HOSTNAMES.has(host)) {
+      const pickLanHost = () => {
+        try {
+          const scriptUrl = NativeModules?.SourceCode?.scriptURL;
+          if (scriptUrl) {
+            const parsed = new URL(String(scriptUrl));
+            const h = parsed.hostname;
+            if (h && !LOCAL_HOSTNAMES.has(h)) return h;
+          }
+        } catch {}
+        try {
+          const devHost = Constants?.expoGo?.developer?.host;
+          if (devHost) {
+            const h = String(devHost).split(':')[0];
+            if (h && !LOCAL_HOSTNAMES.has(h)) return h;
+          }
+        } catch {}
+        try {
+          const hostUri = Constants?.expoConfig?.hostUri;
+          if (hostUri) {
+            const h = String(hostUri).split(':')[0];
+            if (h && !LOCAL_HOSTNAMES.has(h)) return h;
+          }
+        } catch {}
+        try {
+          const dbgHost = Constants?.manifest?.debuggerHost;
+          if (dbgHost) {
+            const h = String(dbgHost).split(':')[0];
+            if (h && !LOCAL_HOSTNAMES.has(h)) return h;
+          }
+        } catch {}
+        const envHost = (typeof process !== 'undefined' ? process.env?.REACT_NATIVE_PACKAGER_HOSTNAME : '') || '';
+        if (envHost && !LOCAL_HOSTNAMES.has(envHost)) return envHost;
+        return '';
+      };
+      const lanHost = pickLanHost();
+      return lanHost ? `ws://${lanHost}:${port}` : '';
+    }
+    return `ws://${host}:${port}`;
+  } catch {
+    return '';
+  }
+}
+
+export function getDevControlUrlFromBase(baseUrl) {
+  try {
+    const isBad = (h) => !h || LOCAL_HOSTNAMES.has(String(h));
+    const base = String(baseUrl || getCurrentBaseUrl() || '');
+    try {
+      const u = new URL(base);
+      const h = u.hostname;
+      if (!isBad(h)) return `http://${h}:4005`;
+    } catch {}
+    const scriptUrl = NativeModules?.SourceCode?.scriptURL;
+    if (scriptUrl) {
+      try {
+        const parsed = new URL(String(scriptUrl));
+        const h = parsed.hostname;
+        if (!isBad(h)) return `http://${h}:4005`;
+      } catch {}
+    }
+    const devHost = Constants?.expoGo?.developer?.host;
+    if (devHost) {
+      const h = String(devHost).split(':')[0];
+      if (!isBad(h)) return `http://${h}:4005`;
+    }
+    const hostUri = Constants?.expoConfig?.hostUri;
+    if (hostUri) {
+      const h = String(hostUri).split(':')[0];
+      if (!isBad(h)) return `http://${h}:4005`;
+    }
+    const dbgHost = Constants?.manifest?.debuggerHost;
+    if (dbgHost) {
+      const h = String(dbgHost).split(':')[0];
+      if (!isBad(h)) return `http://${h}:4005`;
+    }
+    const envPackagerHost = (typeof process !== 'undefined' ? process.env?.REACT_NATIVE_PACKAGER_HOSTNAME : '') || '';
+    if (!isBad(envPackagerHost)) return `http://${envPackagerHost}:4005`;
+    return '';
+  } catch {
+    return '';
+  }
+}
+
+export async function startLocalApi(target, baseUrl) {
+  try {
+    const devEnv = (typeof process !== 'undefined' ? process.env?.EXPO_PUBLIC_DEV_CONTROL_URL : '') || '';
+    const devUrl = LOCAL_HOSTNAMES.has(String(devEnv).replace(/^https?:\/\//, '').split(':')[0]) ? getDevControlUrlFromBase(baseUrl) : (devEnv || getDevControlUrlFromBase(baseUrl));
+    if (!devUrl) return { ok: false };
+    const url = String(devUrl).replace(/\/$/, '') + `/dev/start-api?target=${target === 'local' ? 'local' : 'railway'}`;
+    const res = await axios.get(url, { timeout: 10000 });
+    return { ok: !!res?.data?.ok };
+  } catch {
+    return { ok: false };
   }
 }

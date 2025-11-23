@@ -76,6 +76,7 @@ app.get('/api/health', (req, res) => {
 
 // Novo endpoint: alternar alvo do banco (local/railway) dinamicamente
 import prisma, { switchDbTarget, getProductsForTarget, getSchemaSummaryForTarget } from "./lib/prisma.js";
+import { getSaleUpdates, onSaleUpdate } from "./lib/events.js";
 app.post('/api/admin/db-target', async (req, res) => {
   try {
     const raw = (req.body?.target || '').toString().toLowerCase();
@@ -144,6 +145,39 @@ app.get('/api/admin/schema/diff', async (req, res) => {
   }
 });
 
+app.get('/api/sale/updates', (req, res) => {
+  try {
+    const since = req.query.since || 0;
+    const updates = getSaleUpdates(since);
+    res.json({ ok: true, now: Date.now(), updates });
+  } catch (e) {
+    res.status(500).json({ ok: false });
+  }
+});
+
+const sseClients = [];
+app.get('/api/sale/stream', (req, res) => {
+  try {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders && res.flushHeaders();
+    res.write(`retry: 1000\n\n`);
+    sseClients.push(res);
+    const unsubscribe = onSaleUpdate((payload) => {
+      try { res.write(`data: ${JSON.stringify(payload)}\n\n`); } catch {}
+    });
+    req.on('close', () => {
+      unsubscribe && unsubscribe();
+      const idx = sseClients.indexOf(res);
+      if (idx >= 0) sseClients.splice(idx, 1);
+      try { res.end(); } catch {}
+    });
+  } catch {
+    res.status(500).end();
+  }
+});
+
 // Middleware de autenticação JWT para proteger todas as rotas (exceto /api/auth)
 const authenticate = (req, res, next) => {
   if (req.method === "OPTIONS") return next();
@@ -183,3 +217,26 @@ const dbTarget = process.env.DB_TARGET || (process.env.DATABASE_URL && process.e
 prisma.$connect()
   .then(() => console.log(`✅ Conectado ao MySQL (${dbTarget})`))
   .catch(err => console.error("❌ Erro ao conectar MySQL:", err));
+
+// WebSocket server para eventos em tempo real (LAN, sem localhost)
+(async () => {
+  try {
+    const { WebSocketServer } = await import('ws');
+    const WS_PORT = process.env.WS_PORT || 4001;
+    const wss = new WebSocketServer({ port: WS_PORT, host: '0.0.0.0' });
+    const sockets = new Set();
+    wss.on('connection', (ws) => {
+      sockets.add(ws);
+      ws.on('close', () => sockets.delete(ws));
+    });
+    onSaleUpdate((payload) => {
+      try {
+        const msg = JSON.stringify({ type: 'sale:update', payload });
+        sockets.forEach((ws) => { try { ws.send(msg); } catch {} });
+      } catch {}
+    });
+    console.log(`🔌 WebSocket ativo em ws://0.0.0.0:${WS_PORT}`);
+  } catch (e) {
+    console.warn('WS desativado:', e?.message || e);
+  }
+})();

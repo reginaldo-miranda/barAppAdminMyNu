@@ -17,7 +17,7 @@ import { router } from 'expo-router';
 import { useAuth } from '../src/contexts/AuthContext';
 import { SafeIcon } from '../components/SafeIcon';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { setApiBaseUrl, testApiConnection, switchServerDbTarget } from '../src/services/api';
+import { setApiBaseUrl, testApiConnection, switchServerDbTarget, API_URL, startLocalApi } from '../src/services/api';
 import { STORAGE_KEYS } from '../src/services/storage';
 import Constants from 'expo-constants';
 import { events } from '../src/utils/eventBus';
@@ -109,6 +109,10 @@ export default function LoginScreen() {
   const getLanBaseUrl = (): string => {
     const DEFAULT_PORT = 4000;
     try {
+      const wHost = typeof window !== 'undefined' ? (window as any)?.location?.hostname : '';
+      if (wHost && !['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(String(wHost))) {
+        return `http://${wHost}:${DEFAULT_PORT}/api`;
+      }
       const candidates: string[] = [];
       // Host do bundle JS (mais confiável)
       const scriptUrl = (NativeModules as any)?.SourceCode?.scriptURL;
@@ -137,6 +141,48 @@ export default function LoginScreen() {
     return '';
   };
 
+  const getLanBaseUrlCandidates = (): string[] => {
+    const urls: string[] = [];
+    try {
+      const wHost = typeof window !== 'undefined' ? (window as any)?.location?.hostname : '';
+      if (wHost && !['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(String(wHost))) urls.push(`http://${wHost}:4000/api`);
+    } catch {}
+    try {
+      const scriptUrl = (NativeModules as any)?.SourceCode?.scriptURL;
+      if (scriptUrl) {
+        const parsed = new URL(String(scriptUrl));
+        const h = parsed.hostname;
+        if (h && !['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(h)) urls.push(`http://${h}:4000/api`);
+      }
+    } catch {}
+    try {
+      const devHost = (Constants as any)?.expoGo?.developer?.host;
+      if (devHost) {
+        const h = String(devHost).split(':')[0];
+        if (h && !['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(h)) urls.push(`http://${h}:4000/api`);
+      }
+    } catch {}
+    try {
+      const hostUri = (Constants as any)?.expoConfig?.hostUri;
+      if (hostUri) {
+        const h = String(hostUri).split(':')[0];
+        if (h && !['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(h)) urls.push(`http://${h}:4000/api`);
+      }
+    } catch {}
+    try {
+      const dbgHost = (Constants as any)?.manifest?.debuggerHost;
+      if (dbgHost) {
+        const h = String(dbgHost).split(':')[0];
+        if (h && !['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(h)) urls.push(`http://${h}:4000/api`);
+      }
+    } catch {}
+    try {
+      const envPackagerHost = (typeof process !== 'undefined' ? (process as any)?.env?.REACT_NATIVE_PACKAGER_HOSTNAME : '') || '';
+      if (envPackagerHost && !['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(envPackagerHost)) urls.push(`http://${envPackagerHost}:4000/api`);
+    } catch {}
+    return Array.from(new Set(urls));
+  };
+
   // URL da API para ambiente Railway a partir do .env (EXPO_PUBLIC_API_URL_RAILWAY) ou heurística
   const getRailwayApiUrl = (): string => {
     try {
@@ -163,6 +209,13 @@ export default function LoginScreen() {
         if (envUrl && !isLocalHost(envUrl)) autoUrl = envUrl;
       } catch {}
       if (!autoUrl) autoUrl = getLanBaseUrl();
+      if (!autoUrl) {
+        const candidates = getLanBaseUrlCandidates();
+        for (const cand of candidates) {
+          const r = await retryTestApi(cand, 2, 800);
+          if (r.ok) { autoUrl = cand; break; }
+        }
+      }
       if (!autoUrl || isLocalHost(autoUrl)) {
         Alert.alert('Erro', 'Não foi possível detectar IP da LAN. Inicie com npx expo start --host lan e tente novamente.');
         setBaseStatus('error');
@@ -173,29 +226,30 @@ export default function LoginScreen() {
       // Persistir URL da API local
       setApiUrl(autoUrl);
       await setApiBaseUrl(autoUrl);
-
-      // Alternar explicitamente o servidor para DB_TARGET=local antes de validar
-      setBaseMessage('Alternando servidor para DB • LOCAL...');
-      const switched = await switchServerDbTarget(autoUrl, 'local');
-      if (!switched.ok) {
-        setBaseStatus('error');
-        const reason = String(switched.reason || 'Falha ao alternar DB para LOCAL');
-        setBaseMessage(reason);
-        Alert.alert('Erro', reason);
-        return;
-      }
-
-      // Validar saúde com tentativas/backoff
+      try { await startLocalApi('local', autoUrl); } catch {}
+      try { await new Promise((r) => setTimeout(r, 800)); } catch {}
+      // Validar saúde com tentativas/backoff primeiro
       const res = await retryTestApi(autoUrl, 8, 1000);
       const apiHost = safeHost(autoUrl);
       if (res.ok) {
-        const detectedDbTarget = String(res?.data?.dbTarget || 'local').toUpperCase();
+        const currentDbTarget = String(res?.data?.dbTarget || 'local').toUpperCase();
         setBaseStatus('ok');
-        setActiveDbLabel(`API • ${apiHost} | DB • ${detectedDbTarget}`);
-        await AsyncStorage.setItem(STORAGE_KEYS.DB_TARGET, 'local');
-        events.emit('dbTargetChanged', 'local');
-        setBaseMessage(`Sucesso: API • ${apiHost} | DB • ${detectedDbTarget}`);
-        Alert.alert('Sucesso', 'Conexão local validada e DB • LOCAL ativo!');
+        setActiveDbLabel(`API • ${apiHost} | DB • ${currentDbTarget}`);
+        await AsyncStorage.setItem(STORAGE_KEYS.DB_TARGET, currentDbTarget.toLowerCase());
+        events.emit('dbTargetChanged', currentDbTarget.toLowerCase());
+        setBaseMessage(`Sucesso: API • ${apiHost} | DB • ${currentDbTarget}`);
+        if (currentDbTarget !== 'LOCAL') {
+          const switched = await switchServerDbTarget(autoUrl, 'local');
+          if (switched.ok) {
+            const res2 = await retryTestApi(autoUrl, 6, 1000);
+            const nextTarget = String(res2?.data?.dbTarget || 'local').toUpperCase();
+            setActiveDbLabel(`API • ${apiHost} | DB • ${nextTarget}`);
+            await AsyncStorage.setItem(STORAGE_KEYS.DB_TARGET, nextTarget.toLowerCase());
+            events.emit('dbTargetChanged', nextTarget.toLowerCase());
+            setBaseMessage(`Sucesso: API • ${apiHost} | DB • ${nextTarget}`);
+          }
+        }
+        Alert.alert('Sucesso', 'Conexão local validada!');
         // manter modal aberto para o usuário visualizar status
       } else {
         setBaseStatus('error');
@@ -215,15 +269,7 @@ export default function LoginScreen() {
     try {
       if (option === 'lan') {
         setDbOption('lan');
-        const detected = getLanBaseUrl();
-        if (detected && !isLocalHost(detected)) {
-          setApiUrl(detected);
-          setBaseStatus('idle');
-          setBaseMessage('LAN detectada. Toque em "Salvar e Testar" para aplicar.');
-        } else {
-          setBaseStatus('error');
-          setBaseMessage('Falha ao detectar LAN. Informe a URL ou tente novamente.');
-        }
+        await handleSelectLanAuto();
         return;
       }
       if (option === 'railway') {
@@ -256,31 +302,47 @@ export default function LoginScreen() {
 
       let targetUrl = apiUrl?.trim();
       if (dbOption === 'lan') {
-        const envUrl = typeof process !== 'undefined' ? (process as any)?.env?.EXPO_PUBLIC_API_URL : '';
-        let autoUrl = envUrl;
-        if (!autoUrl || isLocalHost(autoUrl)) {
-          const detected = getLanBaseUrl();
-          if (!detected || isLocalHost(detected)) {
-            Alert.alert('Erro', 'Não foi possível detectar IP da LAN. Inicie com npx expo start --host lan e tente novamente.');
-            return;
-          }
-          autoUrl = detected;
-        }
-        targetUrl = autoUrl;
-        setApiUrl(autoUrl);
-      } else if (dbOption === 'railway') {
-        // Priorizar URL pública da API Railway; fallback para ENV padrão e LAN
-        let autoUrl = getRailwayApiUrl();
-        if (!autoUrl || isLocalHost(autoUrl)) {
+        const candidates: string[] = [];
+        try {
           const envUrl = typeof process !== 'undefined' ? (process as any)?.env?.EXPO_PUBLIC_API_URL : '';
-          autoUrl = envUrl && !isLocalHost(envUrl) ? envUrl : getLanBaseUrl();
+          if (envUrl) candidates.push(envUrl);
+        } catch {}
+        const lan = getLanBaseUrl();
+        if (lan) candidates.push(lan);
+        const more = getLanBaseUrlCandidates();
+        for (const cand of more) candidates.push(cand);
+        await startLocalApi('local', candidates[0] || lan);
+        let chosen = '';
+        for (const cand of Array.from(new Set(candidates))) {
+          if (!cand || isLocalHost(cand)) continue;
+          const r = await retryTestApi(cand, 4, 800);
+          if (r.ok) { chosen = cand; break; }
         }
-        if (!autoUrl || isLocalHost(autoUrl)) {
-          Alert.alert('Erro', 'Não foi possível determinar URL da API Railway nem IP da LAN.');
+        if (!chosen) {
+          Alert.alert('Erro', 'Falha ao validar API Local. Inicie com LAN e tente novamente.');
           return;
         }
-        targetUrl = autoUrl;
-        setApiUrl(autoUrl);
+        targetUrl = chosen;
+        setApiUrl(chosen);
+      } else if (dbOption === 'railway') {
+        const candidates: string[] = [];
+        const lan = getLanBaseUrl();
+        if (lan) candidates.push(lan);
+        const more = getLanBaseUrlCandidates();
+        for (const cand of more) candidates.push(cand);
+        await startLocalApi('railway', candidates[0] || lan);
+        let chosen = '';
+        for (const cand of Array.from(new Set(candidates))) {
+          if (!cand || isLocalHost(cand)) continue;
+          const r = await retryTestApi(cand, 4, 800);
+          if (r.ok) { chosen = cand; break; }
+        }
+        if (!chosen) {
+          Alert.alert('Erro', 'Falha ao validar API na LAN. Inicie com npx expo start --host lan.');
+          return;
+        }
+        targetUrl = chosen;
+        setApiUrl(chosen);
       } else {
         if (!targetUrl) {
           const placeholder = 'http://192.168.x.x:4000/api';
@@ -360,7 +422,7 @@ export default function LoginScreen() {
 
   const ensureBaseReadyForLogin = async () => {
     try {
-      let base = apiUrl || getLanBaseUrl();
+      let base = apiUrl || getLanBaseUrl() || getRailwayApiUrl();
       if (base && !isLocalHost(base)) {
         const res = await retryTestApi(base, 4, 1000);
         if (res?.ok) {
@@ -373,9 +435,8 @@ export default function LoginScreen() {
           return true;
         }
       }
-      await handleSelectLanAuto();
       const stored = await AsyncStorage.getItem(STORAGE_KEYS.API_BASE_URL);
-      base = stored || getLanBaseUrl();
+      base = stored || getLanBaseUrl() || getRailwayApiUrl();
       if (base && !isLocalHost(base)) {
         const res2 = await retryTestApi(base, 6, 1000);
         if (res2?.ok) {
@@ -392,6 +453,71 @@ export default function LoginScreen() {
       return false;
     }
   };
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const storedTarget = await AsyncStorage.getItem(STORAGE_KEYS.DB_TARGET);
+        if (storedTarget === 'railway') {
+          setDbOption('railway');
+          setBaseStatus('testing');
+          const candidates: string[] = [];
+          const lan = getLanBaseUrl();
+          if (lan) candidates.push(lan);
+          const more = getLanBaseUrlCandidates();
+          for (const cand of more) candidates.push(cand);
+          await startLocalApi('railway', candidates[0] || lan);
+          let chosen = '';
+          for (const cand of Array.from(new Set(candidates))) {
+            if (!cand || isLocalHost(cand)) continue;
+            const r = await retryTestApi(cand, 4, 800);
+            if (r.ok) { chosen = cand; break; }
+          }
+          if (chosen) {
+            setApiUrl(chosen);
+            await setApiBaseUrl(chosen);
+            const sw = await switchServerDbTarget(chosen, 'railway');
+            if (sw.ok) {
+              const res = await retryTestApi(chosen, 6, 1000);
+              if (res.ok) {
+                const host = safeHost(chosen);
+                const dbTarget = String(res?.data?.dbTarget || 'railway').toUpperCase();
+                setBaseStatus('ok');
+                setActiveDbLabel(`API • ${host} | DB • ${dbTarget}`);
+                await AsyncStorage.setItem(STORAGE_KEYS.DB_TARGET, 'railway');
+                events.emit('dbTargetChanged', 'railway');
+              }
+            }
+          }
+        } else if (storedTarget === 'local') {
+          setDbOption('lan');
+          setBaseStatus('testing');
+          let autoUrl = getLanBaseUrl();
+          if (!autoUrl || isLocalHost(autoUrl)) {
+            const envUrl = typeof process !== 'undefined' ? (process as any)?.env?.EXPO_PUBLIC_API_URL : '';
+            autoUrl = envUrl && !isLocalHost(envUrl) ? envUrl : getLanBaseUrl();
+          }
+          if (autoUrl && !isLocalHost(autoUrl)) {
+            await startLocalApi('local', autoUrl);
+            setApiUrl(autoUrl);
+            await setApiBaseUrl(autoUrl);
+            const sw = await switchServerDbTarget(autoUrl, 'local');
+            if (sw.ok) {
+              const res = await retryTestApi(autoUrl, 6, 1000);
+              if (res.ok) {
+                const host = safeHost(autoUrl);
+                const dbTarget = String(res?.data?.dbTarget || 'local').toUpperCase();
+                setBaseStatus('ok');
+                setActiveDbLabel(`API • ${host} | DB • ${dbTarget}`);
+                await AsyncStorage.setItem(STORAGE_KEYS.DB_TARGET, 'local');
+                events.emit('dbTargetChanged', 'local');
+              }
+            }
+          }
+        }
+      } catch {}
+    })();
+  }, []);
 
   const handleLogin = async () => {
     if (baseStatus !== 'ok') {

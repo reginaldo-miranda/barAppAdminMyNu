@@ -87,13 +87,6 @@ kill_by_port() {
   fi
 }
 
-stop_localtunnel() {
-  LT_PIDS=$(pgrep -f "localtunnel")
-  if [ -n "$LT_PIDS" ]; then
-    echo "🧹 Encerrando LocalTunnel: $LT_PIDS"
-    kill -9 $LT_PIDS 2>/dev/null
-  fi
-}
 
 # Instalar dependências se necessário
 if [ ! -d "node_modules" ]; then
@@ -101,24 +94,10 @@ if [ ! -d "node_modules" ]; then
   npm install
 fi
 
-# Aplicar migrations e regenerar Prisma Client
-echo "🧩 Aplicando migrations do Prisma..."
-npm run prisma:migrate
+# Pular migrações para não tocar nos dados existentes
+echo "⏭️ Pulando migrações do Prisma (não alterar base de dados)"
 
-echo "🧹 Limpando cache do Prisma e regenerando client..."
-rm -rf node_modules/.prisma >/dev/null 2>&1
-npm run prisma:generate
-
-# Dica de URL pública (evitar localhost)
-PUBLIC_TUNNEL_URL="https://small-trees-rescue.loca.lt/api"
-echo "🔗 URL pública esperada: ${PUBLIC_TUNNEL_URL}"
-
-# Garantir que não há LocalTunnel prévio e iniciar novamente
-stop_localtunnel
-if command -v npx >/dev/null 2>&1; then
-  echo "🌐 Iniciando LocalTunnel em background..."
-  (npx localtunnel --port 4000 --subdomain small-trees-rescue >/dev/null 2>&1 &)
-fi
+:
 
 # Garantir porta livre e iniciar servidor
 kill_by_port 4000

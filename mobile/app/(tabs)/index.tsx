@@ -18,7 +18,7 @@ import { SafeIcon } from '../../components/SafeIcon';
 
 export default function HomeScreen() {
   const authContext = useAuth() as any;
-  const { user, logout } = authContext;
+  const { user, logout, isAuthenticated } = authContext;
   const [stats, setStats] = useState({
     totalSales: 0,
     totalRevenue: 0,
@@ -29,6 +29,10 @@ export default function HomeScreen() {
 
   const loadStats = async () => {
     try {
+      if (!isAuthenticated) {
+        setStats({ totalSales: 0, totalRevenue: 0, openTables: 0, openComandas: 0 });
+        return;
+      }
       const [salesResponse, mesasResponse] = await Promise.all([
         saleService.getAll(),
         mesaService.list(),
@@ -86,6 +90,12 @@ export default function HomeScreen() {
         openComandas,
       });
     } catch (error: any) {
+      const status = error?.response?.status ?? 0;
+      if (status === 401) {
+        Alert.alert('Sessão expirada', 'Faça login novamente para carregar as estatísticas.');
+      } else {
+        Alert.alert('Erro', 'Não foi possível carregar as estatísticas. Verifique sua conexão.');
+      }
       console.error('Erro ao carregar estatísticas:', error);
     }
   };

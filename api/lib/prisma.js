@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config();
-import { PrismaClient } from "@prisma/client";
+import pkg from "@prisma/client";
+const { PrismaClient } = pkg;
 
 // Helper para construir URL do banco com base no alvo (local/railway)
 const buildDatabaseUrl = (target) => {
@@ -22,16 +23,18 @@ const urlLocal = buildDatabaseUrl("local");
 const urlRailway = buildDatabaseUrl("railway");
 const prismaLocal = new PrismaClient({ datasources: { db: { url: urlLocal } } });
 const prismaRailway = new PrismaClient({ datasources: { db: { url: urlRailway } } });
-
-let prisma = (process.env.DB_TARGET === "railway" ? prismaRailway : prismaLocal);
+let prisma = process.env.DB_TARGET === "railway" ? prismaRailway : prismaLocal;
 
 // Exporta função para alternar dinamicamente o alvo do banco
 export const switchDbTarget = async (target) => {
   try {
     const nextTarget = target === "railway" ? "railway" : "local";
+    const nextUrl = nextTarget === "railway" ? urlRailway : urlLocal;
+    await prisma.$disconnect().catch(() => {});
     prisma = nextTarget === "railway" ? prismaRailway : prismaLocal;
     process.env.DB_TARGET = nextTarget;
-    await prisma.$connect().catch(() => {});
+    process.env.DATABASE_URL = nextUrl;
+    await prisma.$connect();
     return { ok: true, target: nextTarget };
   } catch (err) {
     console.error("Erro ao alternar DB_TARGET (Prisma):", err);
@@ -41,7 +44,7 @@ export const switchDbTarget = async (target) => {
 
 export const getCurrentDbInfo = () => {
   try {
-    const urlStr = (process.env.DB_TARGET === "railway" ? urlRailway : urlLocal) || "";
+    const urlStr = process.env.DATABASE_URL || (process.env.DB_TARGET === "railway" ? urlRailway : urlLocal) || "";
     const u = new URL(urlStr);
     const provider = (u.protocol || "").replace(":", "") || "unknown";
     const host = u.hostname || "";
@@ -57,19 +60,14 @@ export const getCurrentDbInfo = () => {
 };
 
 export const getProductsForTarget = async (target) => {
-  const nextTarget = target === "local" ? "local" : target === "railway" ? "railway" : initialTarget;
-  const nextUrl = buildDatabaseUrl(nextTarget);
-  const client = new PrismaClient({ datasources: { db: { url: nextUrl } } });
-  try {
-    const prods = await client.product.findMany({ where: { ativo: true }, select: { id: true, nome: true }, orderBy: { id: "asc" }, take: 50 });
-    return prods;
-  } finally {
-    await client.$disconnect().catch(() => {});
-  }
+  const nextTarget = target === "local" ? "local" : target === "railway" ? "railway" : (process.env.DB_TARGET || "railway");
+  const client = nextTarget === "railway" ? prismaRailway : prismaLocal;
+  const prods = await client.product.findMany({ where: { ativo: true }, select: { id: true, nome: true }, orderBy: { id: "asc" }, take: 50 });
+  return prods;
 };
 
 export default prisma;
-export const getPrisma = () => prisma;
+export const getPrisma = () => (process.env.DB_TARGET === "railway" ? prismaRailway : prismaLocal);
 export const getActivePrisma = () => (process.env.DB_TARGET === "railway" ? prismaRailway : prismaLocal);
 
 // Schema helpers (MySQL)

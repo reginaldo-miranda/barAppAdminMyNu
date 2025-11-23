@@ -5,7 +5,7 @@ import { router, useFocusEffect } from 'expo-router';
 import CriarComandaModal from '../../src/components/CriarComandaModal';
 // import ProdutosComandaModal from '../../src/components/ProdutosComandaModal';
 import SearchAndFilter from '../../src/components/SearchAndFilter';
-import { comandaService, employeeService, saleService } from '../../src/services/api';
+import { comandaService, employeeService, saleService, getWsUrl } from '../../src/services/api';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { Comanda } from '../../src/types/index';
 import ScreenIdentifier from '../../src/components/ScreenIdentifier';
@@ -85,6 +85,14 @@ export default function ComandasAbertasScreen() {
     }
   };
 
+  const softRefreshComandas = async () => {
+    try {
+      const response = await comandaService.getAll();
+      const todasComandas = response.data?.filter((venda: Comanda) => venda.tipoVenda === 'comanda') || [];
+      setComandas(todasComandas);
+    } catch {}
+  };
+
   // Lógica de filtragem igual à tela de produtos
   const filterComandas = () => {
     let filtered = comandas;
@@ -127,6 +135,49 @@ export default function ComandasAbertasScreen() {
     }, 2000);
     return () => clearInterval(intervalId);
   }, [loadComandas]));
+
+  useEffect(() => {
+    let since = Date.now();
+    const t = setInterval(async () => {
+      try {
+        const res = await saleService.updates(since);
+        if (res?.data?.updates?.length) {
+          since = res?.data?.now || Date.now();
+          await softRefreshComandas();
+        }
+      } catch {}
+    }, 500);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const url = getWsUrl();
+      if (url) {
+        const ws = new (globalThis as any).WebSocket(url);
+        ws.onmessage = async (e: any) => {
+          try {
+            const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+            if (msg?.type === 'sale:update') {
+              const id = String(msg?.payload?.id || '');
+              if (!id) return;
+              const r = await saleService.getById(id);
+              const v = r.data;
+              if (v && v.tipoVenda === 'comanda') {
+                setComandas((prev) => {
+                  const byId = new Map<string, any>();
+                  prev.forEach((x: any) => byId.set(String(x._id || x.id), x));
+                  byId.set(String(v._id || v.id), v);
+                  return Array.from(byId.values());
+                });
+              }
+            }
+          } catch {}
+        };
+        return () => { try { ws.close(); } catch {} };
+      }
+    } catch {}
+  }, []);
 
   const handleOpenModal = () => {
     if (Platform.OS === 'ios') {

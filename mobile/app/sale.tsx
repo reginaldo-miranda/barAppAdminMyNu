@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { saleService, mesaService, comandaService } from '../src/services/api';
+import { saleService, mesaService, comandaService, getWsUrl } from '../src/services/api';
 import { useAuth } from '../src/contexts/AuthContext';
 import AddProductToTable from '../src/components/AddProductToTable';
 import ScreenIdentifier from '../src/components/ScreenIdentifier';
@@ -44,6 +44,32 @@ export default function SaleScreen() {
       setInitialItemsModalShown(true);
     }
   }, [isPhone, isViewMode, cart.length, initialItemsModalShown]);
+
+  useEffect(() => {
+    try {
+      const url = getWsUrl();
+      if (url) {
+        const ws = new (globalThis as any).WebSocket(url);
+        ws.onmessage = async (e: any) => {
+          try {
+            const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+            if (msg?.type === 'sale:update') {
+              const id = String(msg?.payload?.id || '');
+              const currentId = String((sale as any)?._id || (sale as any)?.id || vendaId || '');
+              if (!id || !currentId || id !== currentId) return;
+              const r = await saleService.getById(currentId);
+              const v = r.data;
+              if (v) {
+                setSale(v);
+                setCart(v.itens || []);
+              }
+            }
+          } catch {}
+        };
+        return () => { try { ws.close(); } catch {} };
+      }
+    } catch {}
+  }, [sale, vendaId]);
 
   const paymentMethods: PaymentMethod[] = [
     { key: 'dinheiro', label: 'Dinheiro', icon: 'cash' },

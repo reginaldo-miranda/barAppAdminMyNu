@@ -1,6 +1,7 @@
 import express from 'express';
 
 import { getActivePrisma } from '../lib/prisma.js';
+import { recordSaleUpdate } from '../lib/events.js';
 
 const router = express.Router();
 
@@ -120,6 +121,7 @@ router.post('/create', async (req, res) => {
     }
 
     res.status(201).json(mapSaleResponse(normalizeSale(venda)));
+    try { recordSaleUpdate(venda.id); } catch {}
   } catch (error) {
     console.error('Erro ao criar venda:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -452,6 +454,7 @@ router.post('/:id/item', async (req, res) => {
     });
 
     res.json(mapSaleResponse(normalizeSale(vendaAtualizada)));
+    try { recordSaleUpdate(vendaAtualizada.id); } catch {}
   } catch (error) {
     console.error('Erro ao adicionar item:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -498,6 +501,7 @@ router.delete('/:id/item/:produtoId', async (req, res) => {
     });
 
     res.json(mapSaleResponse(normalizeSale(vendaAtualizada)));
+    try { recordSaleUpdate(vendaAtualizada.id); } catch {}
   } catch (error) {
     console.error('Erro ao remover item:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -553,6 +557,7 @@ router.put('/:id/item/:produtoId', async (req, res) => {
     });
 
     res.json(mapSaleResponse(normalizeSale(vendaAtualizada)));
+    try { recordSaleUpdate(vendaAtualizada.id); } catch {}
   } catch (error) {
     console.error('Erro ao atualizar item:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -595,6 +600,7 @@ router.put('/:id/discount', async (req, res) => {
     });
 
     res.json(mapSaleResponse(normalizeSale(vendaAtualizada)));
+    try { recordSaleUpdate(vendaAtualizada.id); } catch {}
   } catch (error) {
     console.error('Erro ao aplicar desconto:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -779,6 +785,7 @@ router.put('/:id/finalize', async (req, res) => {
     }
 
     res.json(mapSaleResponse(vendaFinalizada));
+    try { recordSaleUpdate(vendaFinalizada.id); } catch {}
   } catch (error) {
     console.error('Erro ao finalizar venda:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -831,6 +838,7 @@ router.put('/:id/cancel', async (req, res) => {
     }
 
     res.json(mapSaleResponse(normalizeSale(vendaCancelada)));
+    try { recordSaleUpdate(vendaCancelada.id); } catch {}
   } catch (error) {
     console.error('Erro ao cancelar venda:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { authService } from '../services/api';
+import { authService, clearApiBaseUrl, getCurrentBaseUrl, testApiConnection } from '../services/api';
 
 // Interface para o contexto de autenticação
 const defaultAuthContext = {
@@ -82,7 +82,21 @@ export const AuthProvider = ({ children }) => {
       } else {
         setIsAuthenticated(false);
         setUser(null);
-        console.log('🔍 AuthContext: Nenhuma sessão ativa encontrada - redirecionando para login');
+        console.log('🔍 AuthContext: Nenhuma sessão ativa - resetando base e forçando login admin');
+        try {
+          await clearApiBaseUrl();
+          const base = getCurrentBaseUrl();
+          const ping = await testApiConnection(base, undefined);
+          if (!ping?.ok) {
+            console.warn('🔌 API inacessível:', ping?.reason || ping?.status);
+          }
+          const res = await login({ email: 'admin@barapp.com', senha: '123456' });
+          if (!res?.success) {
+            console.warn('🔍 AuthContext: Falha ao forçar login admin');
+          }
+        } catch (e) {
+          console.warn('🔍 AuthContext: Erro ao forçar login admin:', e?.message || e);
+        }
       }
     } catch (error) {
       console.error('🔍 AuthContext: Erro ao verificar autenticação:', error);

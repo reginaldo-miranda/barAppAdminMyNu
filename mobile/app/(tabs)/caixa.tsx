@@ -12,7 +12,7 @@ import {
   Platform
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { saleService, API_URL, caixaService } from '../../src/services/api';
+import { saleService, API_URL, caixaService, getWsUrl } from '../../src/services/api';
 import ScreenIdentifier from '../../src/components/ScreenIdentifier';
 import { events } from '../../src/utils/eventBus';
 import { mesaService } from '../../src/services/api';
@@ -24,14 +24,14 @@ interface Sale {
   nomeComanda?: string;
   tipoVenda: string;
   status: string;
-  itens: Array<{
+  itens: {
     produto?: string;
     nomeProduto: string;
     quantidade: number;
     precoUnitario: number;
     subtotal: number;
     _id: string;
-  }>;
+  }[];
   mesa?: { _id?: string; numero?: string; nome?: string; funcionarioResponsavel?: { nome: string }; nomeResponsavel?: string };
   funcionario?: { nome: string };
   // Snapshots adicionados na finalização
@@ -90,7 +90,7 @@ export default function CaixaScreen() {
       return true;
     }
 
-    const isMarked = !!marks[cv.venda._id];
+    const isMarked = !!marks[saleKey(cv.venda)];
     const matchMark =
       markFilter === 'all' ||
       (markFilter === 'marked' ? isMarked : !isMarked);
@@ -171,6 +171,35 @@ export default function CaixaScreen() {
     }
   };
 
+  // Atualizações sem spinner para evitar flicker
+  const softRefreshVendas = async () => {
+    try {
+      const response = await saleService.open();
+      const abertas = response.data || [];
+      setVendas((prev) => {
+        const byId = new Map<string, any>();
+        prev.forEach((v: any) => byId.set(String((v as any)?._id || (v as any)?.id), v));
+        abertas.forEach((v: any) => byId.set(String((v as any)?._id || (v as any)?.id), v));
+        return Array.from(byId.values());
+      });
+    } catch {}
+  };
+
+  const softRefreshCaixa = async () => {
+    try {
+      const resp = await caixaService.statusAberto();
+      const caixaData = resp.data;
+      setHasCaixaAberto(true);
+      const vendasRegistradas: CaixaVenda[] = (caixaData?.vendas || []).map((v: any) => ({
+        venda: v.venda,
+        valor: v.valor,
+        formaPagamento: v.formaPagamento,
+        dataVenda: v.dataVenda,
+      }));
+      setCaixaVendas(vendasRegistradas);
+    } catch {}
+  };
+
   const calcularTotal = (venda: Sale) => {
     return venda.itens.reduce((total, item) => {
       return total + (item.precoUnitario * item.quantidade);
@@ -242,6 +271,64 @@ export default function CaixaScreen() {
   }, []);
 
   useEffect(() => {
+    let since = Date.now();
+    const t = setInterval(async () => {
+      try {
+        const res = await saleService.updates(since);
+        const updates = res?.data?.updates || [];
+        if (updates.length) {
+          since = res?.data?.now || Date.now();
+          // Buscar somente vendas alteradas e mesclar sem spinner
+          const ids: string[] = updates.map((u: any) => String(u.id));
+          const results = await Promise.all(ids.map((id) => saleService.getById(id)));
+          const changed = results.map((r) => r.data).filter(Boolean);
+          if (changed.length) {
+            setVendas((prev) => {
+              const byId = new Map<string, any>();
+              prev.forEach((v: any) => byId.set(String((v as any)?._id || (v as any)?.id), v));
+              changed.forEach((v: any) => byId.set(String((v as any)?._id || (v as any)?.id), v));
+              return Array.from(byId.values());
+            });
+          }
+          await softRefreshCaixa();
+        }
+      } catch {}
+    }, 500);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    // WS para mobile/ExpoGo (bidirecional)
+    try {
+      const url = getWsUrl();
+      if (url) {
+        const ws = new (globalThis as any).WebSocket(url);
+        ws.onmessage = async (e: any) => {
+          try {
+            const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+            if (msg?.type === 'sale:update') {
+              const id = String(msg?.payload?.id || '');
+              if (!id) return;
+              const r = await saleService.getById(id);
+              const v = r.data;
+              if (v) {
+                setVendas((prev) => {
+                  const byId = new Map<string, any>();
+                  prev.forEach((x: any) => byId.set(String((x as any)?._id || (x as any)?.id), x));
+                  byId.set(String(v._id || v.id), v);
+                  return Array.from(byId.values());
+                });
+                await softRefreshCaixa();
+              }
+            }
+          } catch {}
+        };
+        return () => { try { ws.close(); } catch {} };
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
     if (Platform.OS === 'web') {
       try {
         const saved = window.localStorage.getItem('caixaMarks');
@@ -278,7 +365,7 @@ export default function CaixaScreen() {
               const resp = await mesaService.getById(mesaId);
               const mesaData = resp?.data?.data || resp?.data; // algumas rotas retornam { data }
               if (mesaData && mesaData._id) {
-                setMesaInfoBySale(prev => ({ ...prev, [cv.venda._id]: mesaData }));
+                setMesaInfoBySale(prev => ({ ...prev, [saleKey(cv.venda)]: mesaData }));
               }
             } catch (e) {
               console.warn('Falha ao buscar detalhes da mesa', mesaId, e);
@@ -463,7 +550,7 @@ export default function CaixaScreen() {
               </View>
             ) : (
               filteredCaixaVendas.map((cv, idx) => {
-                const mesaObj: any = mesaInfoBySale[cv.venda._id] || ((cv.venda.mesa && typeof cv.venda.mesa === 'object') ? cv.venda.mesa : undefined);
+                const mesaObj: any = mesaInfoBySale[saleKey(cv.venda)] || ((cv.venda.mesa && typeof cv.venda.mesa === 'object') ? cv.venda.mesa : undefined);
                 const clean = (s: any) => (typeof s === 'string' ? s.trim() : '');
                 const nomeRespMesa = clean(mesaObj?.nomeResponsavel);
                 const nomeFuncMesa = clean(mesaObj?.funcionarioResponsavel?.nome);
@@ -486,7 +573,7 @@ export default function CaixaScreen() {
                   }
                 }
                 return (
-                  <View key={`${cv.venda._id}-${idx}`} style={styles.vendaCard}>
+                  <View key={`${saleKey(cv.venda)}-${idx}`} style={styles.vendaCard}>
                     <View style={styles.rowLine}>
                       <Text style={styles.vendaTitle}>
                         {mesaObj
@@ -498,14 +585,14 @@ export default function CaixaScreen() {
                         {Platform.OS === 'web' && (
                           <TouchableOpacity
                             style={styles.rowAction}
-                            onPress={() => toggleMark(cv.venda._id)}
-                            accessibilityLabel={marks[cv.venda._id] ? 'Desmarcar' : 'Marcar'}
+                            onPress={() => toggleMark(saleKey(cv.venda))}
+                            accessibilityLabel={marks[saleKey(cv.venda)] ? 'Desmarcar' : 'Marcar'}
                           >
                             <SafeIcon
-                              name={marks[cv.venda._id] ? 'checkbox' : 'square-outline'}
+                              name={marks[saleKey(cv.venda)] ? 'checkbox' : 'square-outline'}
                               size={22}
-                              color={marks[cv.venda._id] ? '#2196F3' : '#999'}
-                              fallbackText={marks[cv.venda._id] ? '☑' : '☐'}
+                              color={marks[saleKey(cv.venda)] ? '#2196F3' : '#999'}
+                              fallbackText={marks[saleKey(cv.venda)] ? '☑' : '☐'}
                             />
                           </TouchableOpacity>
                         )}
@@ -841,3 +928,4 @@ const styles = StyleSheet.create({
     marginVertical: 3,
   },
 });
+  const saleKey = (v: Sale) => String((v as any)?._id || (v as any)?.id || '');

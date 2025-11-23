@@ -3,6 +3,7 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const http = require('http');
+const fs = require('fs');
 
 // Detectar IP da LAN
 function getLanIp() {
@@ -45,18 +46,75 @@ function checkHealth(url, timeoutMs = 2000) {
   });
 }
 
+function createDevControlServer(lanIp) {
+  try {
+    if (process.env.EXPO_PUBLIC_DEV_CONTROL_URL) return;
+    const server = http.createServer((req, res) => {
+      try {
+        const u = new URL(req.url, `http://${lanIp}:4005`);
+        if (u.pathname === '/dev/start-api') {
+          const t = (u.searchParams.get('target') || '').toLowerCase();
+          const arg = t === 'local' ? 'local' : 'railway';
+          try {
+            const kill = spawn('bash', ['-lc', 'lsof -tiTCP:4000 | xargs kill -9 2>/dev/null || true'], { detached: true, stdio: 'ignore' });
+            kill.unref();
+          } catch {}
+          try {
+            const apiDir = path.resolve(__dirname, '..', 'api');
+            const child = spawn('node', ['server.js'], {
+              cwd: apiDir,
+              detached: true,
+              stdio: 'ignore',
+              env: { ...process.env, DB_TARGET: arg },
+            });
+            child.unref();
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true, target: arg }));
+            return;
+          } catch (e) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: false }));
+            return;
+          }
+        }
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false }));
+      } catch {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false }));
+      }
+    });
+    server.on('error', () => {});
+    server.listen(4005, '0.0.0.0', () => {
+      process.env.EXPO_PUBLIC_DEV_CONTROL_URL = `http://${lanIp}:4005`;
+    });
+  } catch {}
+}
+
 async function ensureApiRunning() {
   try {
     const lanIp = getLanIp();
     if (lanIp) {
+      process.env.REACT_NATIVE_PACKAGER_HOSTNAME = lanIp;
+      createDevControlServer(lanIp);
       // Expor a URL pública da API para o bundle
       process.env.EXPO_PUBLIC_API_URL = `http://${lanIp}:4000/api`;
       const healthy = await checkHealth(`http://${lanIp}:4000/api/health`, 1500);
       if (!healthy) {
         console.log('🔧 API não está ativa. Iniciando automaticamente com DB_TARGET=local...');
         const scriptPath = path.resolve(__dirname, '..', 'start-api.sh');
+        // Ler alvo preferido do arquivo .env da API, se existir
+        let preferredTarget = 'railway';
         try {
-          const child = spawn('bash', [scriptPath, 'local'], {
+          const envPath = path.resolve(__dirname, '..', 'api', '.env');
+          if (fs.existsSync(envPath)) {
+            const content = fs.readFileSync(envPath, 'utf8');
+            const m = content.match(/DB_TARGET\s*=\s*(\w+)/i);
+            if (m && /^(local|railway)$/i.test(m[1])) preferredTarget = m[1].toLowerCase();
+          }
+        } catch {}
+        try {
+          const child = spawn('bash', [scriptPath, preferredTarget], {
             cwd: path.resolve(__dirname, '..'),
             detached: true,
             stdio: 'ignore',

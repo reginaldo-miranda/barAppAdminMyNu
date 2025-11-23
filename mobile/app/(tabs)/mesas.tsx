@@ -16,7 +16,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 
 import { SafeIcon } from '../../components/SafeIcon';
-import { mesaService, saleService, employeeService } from '../../src/services/api';
+import { mesaService, saleService, employeeService, getWsUrl } from '../../src/services/api';
   import ProductSelector from '../../src/components/ProductSelector.js';
   import { useAuth } from '../../src/contexts/AuthContext';
   import SearchAndFilter from '../../src/components/SearchAndFilter';
@@ -177,6 +177,14 @@ export default function MesasScreen() {
     }
   }
 
+  async function softRefreshMesas() {
+    try {
+      const response = await mesaService.list();
+      const mesasData = response.data || [];
+      setMesas(mesasData);
+    } catch {}
+  }
+
   async function loadFuncionarios() {
     try {
       const response = await employeeService.getAll();
@@ -190,6 +198,121 @@ export default function MesasScreen() {
     setRefreshing(true);
     await loadMesas();
     setRefreshing(false);
+  }, []);
+
+  useEffect(() => {
+    const lastFetchRef = { ts: 0 } as any;
+    let ws: any = null;
+    let sse: any = null;
+    let pollTimer: any = null;
+    let reconnectTimer: any = null;
+    let reconnectDelay = 1000;
+    const maxDelay = 8000;
+
+    const scheduleFetch = async () => {
+      const now = Date.now();
+      if (now - lastFetchRef.ts >= 1500) {
+        lastFetchRef.ts = now;
+        await softRefreshMesas();
+      }
+    };
+
+    const startPolling = () => {
+      stopPolling();
+      pollTimer = setInterval(scheduleFetch, 2000);
+    };
+    const stopPolling = () => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } };
+
+    const connectWebSocket = () => {
+      try {
+        const url = getWsUrl();
+        if (!url) { startPolling(); return; }
+        ws = new (globalThis as any).WebSocket(url);
+        ws.onopen = () => { reconnectDelay = 1000; stopPolling(); };
+        ws.onmessage = async (e: any) => {
+          try {
+            const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+            if (msg?.type === 'sale:update') {
+              const id = String(msg?.payload?.id || '');
+              if (id) {
+                try {
+                  const r = await saleService.getById(id);
+                  const v = r?.data;
+                  const mesaId = Number(v?.mesaId || 0);
+                  const aberta = String(v?.status || '').toLowerCase() === 'aberta';
+                  if (mesaId && Number.isFinite(mesaId)) {
+                    setMesas((prev) => prev.map((m) => {
+                      const mid = Number((m as any)?.id || 0);
+                      if (mid === mesaId) {
+                        return { ...m, status: aberta ? 'ocupada' : 'livre' } as any;
+                      }
+                      return m;
+                    }));
+                  } else {
+                    await scheduleFetch();
+                  }
+                } catch {
+                  await scheduleFetch();
+                }
+              } else {
+                await scheduleFetch();
+              }
+            }
+          } catch {}
+        };
+        ws.onerror = () => { try { ws.close(); } catch {}; };
+        ws.onclose = () => {
+          try { ws = null; } catch {}
+          stopPolling();
+          if (reconnectTimer) clearTimeout(reconnectTimer);
+          reconnectTimer = setTimeout(connectWebSocket, reconnectDelay);
+          reconnectDelay = Math.min(reconnectDelay * 2, maxDelay);
+          startPolling();
+        };
+      } catch { startPolling(); }
+    };
+
+    const connectSseIfWeb = () => {
+      try {
+        const isWeb = typeof window !== 'undefined' && !!(window as any).EventSource;
+        if (!isWeb) return;
+        const base = (API_URL || '').replace(/\/$/, '');
+        if (!base) return;
+        const url = `${base}/sale/stream`;
+        sse = new (window as any).EventSource(url);
+        sse.onmessage = async (evt: any) => {
+          try {
+            const msg = JSON.parse(String(evt?.data || '{}'));
+            if (msg?.type === 'sale:update') await scheduleFetch();
+          } catch {}
+        };
+        sse.onerror = () => { try { sse.close(); } catch {}; };
+      } catch {}
+    };
+
+    connectWebSocket();
+    connectSseIfWeb();
+
+    return () => {
+      try { ws && ws.close(); } catch {}
+      try { sse && sse.close && sse.close(); } catch {}
+      try { stopPolling(); } catch {}
+      try { reconnectTimer && clearTimeout(reconnectTimer); } catch {}
+    };
+  }, []);
+
+  useEffect(() => {
+    let since = Date.now();
+    const t = setInterval(async () => {
+      try {
+        const res = await saleService.updates(since);
+        if (res?.data?.updates?.length) {
+          since = res?.data?.now || Date.now();
+          await softRefreshMesas();
+        }
+      } catch {}
+    }, 1000);
+    return () => clearInterval(t);
   }, []);
 
   // Estatísticas das mesas

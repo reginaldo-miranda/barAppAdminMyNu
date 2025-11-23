@@ -19,7 +19,8 @@
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.17.1",
-    "mysql2": "^3.11.3"
+    "mysql2": "^3.11.3",
+    "ws": "^8.17.0"
   },
   "devDependencies": {
     "prisma": "^6.18.0"
