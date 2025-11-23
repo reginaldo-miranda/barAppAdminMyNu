@@ -4,7 +4,9 @@ HOST=0.0.0.0
 
 # URLs de conexão para seleção
 DATABASE_URL_LOCAL="mysql://root:saguides%40123@localhost:3306/appBar"
-DATABASE_URL_RAILWAY="mysql://root:EcNHsXSBfTPvATYnaVMSGHKIOjDMZnZx@shuttle.proxy.rlwy.net:17474/railway"
 
-# DATABASE_URL efetiva será definida pelo script de start (start-api.sh) com base em DB_TARGET
-# Exemplo manual: export DB_TARGET=railway; export DATABASE_URL="$DATABASE_URL_RAILWAY"
+# Observação:
+# A variável DATABASE_URL efetiva será definida automaticamente pelo start-api.sh
+# e pelo código em lib/prisma.js com base no DB_TARGET selecionado (local/railway).
+
+DATABASE_URL_RAILWAY="mysql://root:EcNHsXSBfTPvATYnaVMSGHKIOjDMZnZx@shuttle.proxy.rlwy.net:17474/railway"
