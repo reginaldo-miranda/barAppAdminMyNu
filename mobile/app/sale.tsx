@@ -9,7 +9,8 @@ import {
   ActivityIndicator,
   SafeAreaView,
   Dimensions,
-  Platform
+  Platform,
+  Linking
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -255,6 +256,34 @@ export default function SaleScreen() {
       // Atualiza o estado local com os dados do backend
       setSale(response.data);
       setCart(response.data.itens || []);
+
+      try {
+        const whatsTargets = Array.isArray(response?.data?.whatsTargets) ? response.data.whatsTargets : [];
+        if (whatsTargets.length > 0) {
+          const msg = `Pedido: ${product.nome} x1`;
+          Alert.alert(
+            'Enviar via WhatsApp',
+            'Deseja enviar este pedido por WhatsApp ou imprimir?',
+            [
+              { text: 'Imprimir', style: 'default' },
+              {
+                text: 'WhatsApp',
+                onPress: async () => {
+                  try {
+                    const phone = String(whatsTargets[0]).replace(/[^0-9+]/g, '');
+                    const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+                    const can = await Linking.canOpenURL(url);
+                    if (can) await Linking.openURL(url);
+                    else Alert.alert('Erro', 'Não foi possível abrir o WhatsApp');
+                  } catch {
+                    Alert.alert('Erro', 'Falha ao abrir o WhatsApp');
+                  }
+                }
+              }
+            ]
+          );
+        }
+      } catch {}
       
       console.log('Item adicionado com sucesso via backend');
       

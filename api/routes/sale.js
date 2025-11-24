@@ -391,7 +391,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // Adicionar item à venda (Prisma)
-router.post('/:id/item', async (req, res) => {
+  router.post('/:id/item', async (req, res) => {
   try {
     const prisma = getActivePrisma();
     const id = Number(req.params.id);
@@ -453,7 +453,36 @@ router.post('/:id/item', async (req, res) => {
       },
     });
 
-    res.json(mapSaleResponse(normalizeSale(vendaAtualizada)));
+    let whatsTargets = [];
+    try {
+      const setores = await prisma.$queryRawUnsafe(`SELECT s.nome AS nome, s.modoEnvio AS modo, s.whatsappDestino AS whatsappDestino FROM \`SetorImpressao\` s INNER JOIN \`ProductSetorImpressao\` psi ON psi.setorId = s.id WHERE psi.productId = ${prodId} AND s.ativo = 1`);
+      let cozinha = false;
+      let bar = false;
+      let hasWhats = false;
+      for (const s of Array.isArray(setores) ? setores : []) {
+        const nome = String(s.nome || '').toLowerCase();
+        const modo = String(s.modo || '').toLowerCase();
+        if (modo === 'whatsapp') hasWhats = true;
+        if (modo === 'whatsapp' && s.whatsappDestino) {
+          const w = String(s.whatsappDestino).trim();
+          if (w) whatsTargets.push(w);
+        }
+        if (nome === 'comandas' || nome === 'mesas' || nome === 'cozinha') cozinha = true;
+        if (nome === 'balcão' || nome === 'balcao' || nome === 'bar') bar = true;
+      }
+      if (cozinha || bar) {
+        await prisma.sale.update({ where: { id }, data: { impressaoCozinha: cozinha ? true : undefined, impressaoBar: bar ? true : undefined } });
+      }
+      if (hasWhats) {
+        try { console.log('[WHATSAPP] Setor definido via WhatsApp para produto', prodId); } catch {}
+      }
+    } catch {}
+
+    const payload = mapSaleResponse(normalizeSale(vendaAtualizada));
+    if (whatsTargets.length > 0) {
+      payload.whatsTargets = Array.from(new Set(whatsTargets));
+    }
+    res.json(payload);
     try { recordSaleUpdate(vendaAtualizada.id); } catch {}
   } catch (error) {
     console.error('Erro ao adicionar item:', error);

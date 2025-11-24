@@ -19,7 +19,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Picker } from '@react-native-picker/picker';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { useProduct } from '../../src/contexts/ProductContext';
-import { productService, typeService, unidadeMedidaService, categoryService } from '../../src/services/api';
+import { productService, typeService, unidadeMedidaService, categoryService, setorImpressaoService } from '../../src/services/api';
 
 interface Categoria {
   id: string;
@@ -35,6 +35,12 @@ interface UnidadeMedida {
   id: string;
   nome: string;
   sigla: string;
+}
+
+interface SetorImpressao {
+  id: string;
+  nome: string;
+  modoEnvio: 'impressora' | 'whatsapp';
 }
 
 interface ValidationErrors {
@@ -85,6 +91,10 @@ export default function CadastroProduto() {
   const [loadingUnidades, setLoadingUnidades] = useState(false);
   const [showUnidadeModal, setShowUnidadeModal] = useState(false);
   const [selectedUnidade, setSelectedUnidade] = useState<UnidadeMedida | null>(null);
+  const [setores, setSetores] = useState<SetorImpressao[]>([]);
+  const [selectedSetores, setSelectedSetores] = useState<string[]>([]);
+  const [loadingSetores, setLoadingSetores] = useState(false);
+  const [showSetoresModal, setShowSetoresModal] = useState(false);
 
   // Estados para feedback visual
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -125,15 +135,12 @@ export default function CadastroProduto() {
   // Validação completa do formulário
   const isFormValid = useMemo(() => {
     const errors: ValidationErrors = {};
-    
     errors.nome = validateField('nome', nome);
     errors.preco = validateField('preco', preco);
     errors.categoria = validateField('categoria', categoriaId);
     errors.descricao = validateField('descricao', descricao);
     errors.estoque = validateField('estoque', estoque);
-
     setValidationErrors(errors);
-    
     return !Object.values(errors).some(error => error !== undefined);
   }, [nome, preco, categoriaId, descricao, estoque]);
 
@@ -152,6 +159,7 @@ export default function CadastroProduto() {
     loadCategorias();
     loadTipos();
     loadUnidades();
+    loadSetores();
   }, []);
 
   const loadCategorias = async () => {
@@ -200,6 +208,19 @@ export default function CadastroProduto() {
       Alert.alert('Erro', 'Não foi possível carregar as unidades de medida');
     } finally {
       setLoadingUnidades(false);
+    }
+  };
+
+  const loadSetores = async () => {
+    setLoadingSetores(true);
+    try {
+      const data = await setorImpressaoService.getAll();
+      setSetores((data || []).map((s: any) => ({ id: String(s.id ?? s._id), nome: s.nome, modoEnvio: String(s.modoEnvio || 'impressora') as any })));
+    } catch (error) {
+      console.error('Erro ao carregar setores:', error);
+      Alert.alert('Erro', 'Não foi possível carregar os setores de impressão');
+    } finally {
+      setLoadingSetores(false);
     }
   };
 
@@ -279,6 +300,8 @@ export default function CadastroProduto() {
         setAtivo(produto.ativo !== undefined ? produto.ativo : true);
         setDataInclusao(produto.dataInclusao ? new Date(produto.dataInclusao) : new Date());
         setDataAlteracao(new Date());
+        const sids = Array.isArray((produto as any)?.setoresImpressaoIds) ? (produto as any).setoresImpressaoIds.map((n: any) => String(n)) : [];
+        setSelectedSetores(sids);
       } else {
         setLoadError('Produto não encontrado.');
         Alert.alert('Erro', 'Produto não encontrado.');
@@ -356,7 +379,8 @@ export default function CadastroProduto() {
         ativo: ativo,
         categoriaId: categoriaSelecionada ? Number(categoriaSelecionada.id) : undefined,
         tipoId: tipoSelecionado ? Number(tipoSelecionado.id) : undefined,
-        unidadeMedidaId: unidadeSelecionada ? Number(unidadeSelecionada.id) : undefined
+        unidadeMedidaId: unidadeSelecionada ? Number(unidadeSelecionada.id) : undefined,
+        setoresImpressaoIds: selectedSetores.map((id) => Number(id))
       };
 
       let response;
@@ -400,6 +424,7 @@ export default function CadastroProduto() {
                   setAtivo(true);
                   setDataAlteracao(new Date());
                   setSaveSuccess(false);
+                  setSelectedSetores([]);
                   // Resetar interações
                   setHasInteracted({
                     nome: false,
@@ -662,6 +687,18 @@ export default function CadastroProduto() {
                 </TouchableOpacity>
               </View>
             </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Setor de Impressão</Text>
+              <TouchableOpacity
+                style={styles.unidadeSelector}
+                onPress={() => setShowSetoresModal(true)}
+              >
+                <Text style={[styles.unidadeSelectorText, selectedSetores.length === 0 && styles.placeholderText]}>
+                  {selectedSetores.length > 0 ? setores.filter(s => selectedSetores.includes(String(s.id))).map(s => s.nome).join(', ') : 'Selecione setores'}
+                </Text>
+                <Ionicons name="chevron-down" size={20} color="#666" />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Card de Estoque */}
@@ -813,6 +850,62 @@ export default function CadastroProduto() {
                     </Text>
                   </View>
                   {item.id === unidadeId && (
+                    <Ionicons name="checkmark" size={20} color="#2196F3" />
+                  )}
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showSetoresModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowSetoresModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Selecionar Setores de Impressão</Text>
+              <TouchableOpacity
+                onPress={() => setShowSetoresModal(false)}
+                style={styles.modalCloseButton}
+              >
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={setores}
+              keyExtractor={(item) => item.id}
+              showsVerticalScrollIndicator={true}
+              style={styles.unidadesList}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.unidadeItem,
+                    selectedSetores.includes(item.id) && styles.unidadeItemSelected
+                  ]}
+                  onPress={() => {
+                    setSelectedSetores(prev => prev.includes(item.id) ? prev.filter(id => id !== item.id) : [...prev, item.id]);
+                  }}
+                >
+                  <View style={styles.unidadeItemContent}>
+                    <Text style={[
+                      styles.unidadeItemName,
+                      selectedSetores.includes(item.id) && styles.unidadeItemSelectedText
+                    ]}>
+                      {item.nome}
+                    </Text>
+                    <Text style={[
+                      styles.unidadeItemSigla,
+                      selectedSetores.includes(item.id) && styles.unidadeItemSelectedText
+                    ]}>
+                      {item.modoEnvio === 'whatsapp' ? 'WhatsApp' : 'Impressora'}
+                    </Text>
+                  </View>
+                  {selectedSetores.includes(item.id) && (
                     <Ionicons name="checkmark" size={20} color="#2196F3" />
                   )}
                 </TouchableOpacity>

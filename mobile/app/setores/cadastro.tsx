@@ -1,0 +1,151 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView, ActivityIndicator, Switch } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../../src/contexts/AuthContext';
+import { setorImpressaoService } from '../../src/services/api';
+
+type ModoEnvio = 'impressora' | 'whatsapp';
+
+interface SetorFormData {
+  nome: string;
+  descricao: string;
+  modoEnvio: ModoEnvio;
+  whatsappDestino: string;
+  ativo: boolean;
+}
+
+export default function CadastroSetorScreen() {
+  const { hasPermission } = useAuth() as any;
+  const { id } = useLocalSearchParams();
+  const isEditing = !!id;
+  const [loading, setLoading] = useState(false);
+  const [loadingRecord, setLoadingRecord] = useState(false);
+  const [formData, setFormData] = useState<SetorFormData>({ nome: '', descricao: '', modoEnvio: 'impressora', whatsappDestino: '', ativo: true });
+
+  useEffect(() => { if (isEditing && id) loadRecord(id as string); }, [isEditing, id]);
+
+  const loadRecord = async (recordId: string) => {
+    setLoadingRecord(true);
+    try {
+      const response = await setorImpressaoService.getById(recordId);
+      const s = response.data;
+      setFormData({ nome: s.nome, descricao: s.descricao || '', modoEnvio: (s.modoEnvio || 'impressora'), whatsappDestino: s.whatsappDestino || '', ativo: !!s.ativo });
+    } catch (error) {
+      Alert.alert('Erro', 'Não foi possível carregar os dados do setor.');
+      router.back();
+    } finally { setLoadingRecord(false); }
+  };
+
+  if (!hasPermission('produtos')) {
+    return (
+      <View style={styles.accessDenied}>
+        <Ionicons name="lock-closed" size={64} color="#666" />
+        <Text style={styles.accessDeniedText}>Acesso Negado</Text>
+        <Text style={styles.accessDeniedSubtext}>Você não tem permissão para acessar esta tela</Text>
+      </View>
+    );
+  }
+
+  if (loadingRecord) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}><Ionicons name="arrow-back" size={24} color="#fff" /></TouchableOpacity>
+          <Text style={styles.headerTitle}>Carregando...</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={styles.accessDenied}>
+          <ActivityIndicator size="large" color="#2196F3" />
+          <Text style={styles.accessDeniedSubtext}>Carregando dados do setor...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  const handleSave = async () => {
+    if (!formData.nome.trim()) { Alert.alert('Erro', 'Nome do setor é obrigatório'); return; }
+    if (formData.modoEnvio === 'whatsapp' && !formData.whatsappDestino.trim()) { Alert.alert('Erro', 'Informe o número/contato do WhatsApp'); return; }
+    try {
+      setLoading(true);
+      const payload = { nome: formData.nome.trim(), descricao: formData.descricao.trim(), modoEnvio: formData.modoEnvio, whatsappDestino: formData.whatsappDestino.trim(), ativo: formData.ativo };
+      if (isEditing && id) { await setorImpressaoService.update(id as string, payload); } else { await setorImpressaoService.create(payload); }
+      Alert.alert('Sucesso', isEditing ? 'Setor atualizado com sucesso!' : 'Setor cadastrado com sucesso!', [{ text: 'OK', onPress: () => router.back() }]);
+    } catch (error) {
+      Alert.alert('Erro', 'Erro ao salvar setor. Verifique sua conexão e tente novamente.');
+    } finally { setLoading(false); }
+  };
+
+  const updateFormData = (field: keyof SetorFormData, value: any) => { setFormData(prev => ({ ...prev, [field]: value })); };
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color="#fff" /></TouchableOpacity>
+        <Text style={styles.headerTitle}>{isEditing ? 'Editar Setor' : 'Cadastrar Setor'}</Text>
+        <View style={{ width: 40 }} />
+      </View>
+      <ScrollView style={styles.content}>
+        <View style={styles.form}>
+          <View style={styles.formGroup}><Text style={styles.label}>Nome *</Text><TextInput style={styles.input} value={formData.nome} onChangeText={(text) => updateFormData('nome', text)} placeholder="Ex: Comandas, Mesas, Balcão" placeholderTextColor="#999" /></View>
+          <View style={styles.formGroup}><Text style={styles.label}>Descrição</Text><TextInput style={[styles.input, styles.textArea]} value={formData.descricao} onChangeText={(text) => updateFormData('descricao', text)} placeholder="Descrição opcional" placeholderTextColor="#999" multiline numberOfLines={3} textAlignVertical="top" /></View>
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Modo de Envio *</Text>
+            <View style={styles.modeRow}>
+              <TouchableOpacity style={[styles.modeBtn, formData.modoEnvio === 'impressora' && styles.modeBtnActive]} onPress={() => updateFormData('modoEnvio', 'impressora')}>
+                <Ionicons name="print" size={18} color={formData.modoEnvio === 'impressora' ? '#fff' : '#666'} />
+                <Text style={[styles.modeText, formData.modoEnvio === 'impressora' && styles.modeTextActive]}>Impressora</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modeBtn, formData.modoEnvio === 'whatsapp' && styles.modeBtnActive]} onPress={() => updateFormData('modoEnvio', 'whatsapp')}>
+                <Ionicons name="logo-whatsapp" size={18} color={formData.modoEnvio === 'whatsapp' ? '#fff' : '#666'} />
+                <Text style={[styles.modeText, formData.modoEnvio === 'whatsapp' && styles.modeTextActive]}>WhatsApp</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          {formData.modoEnvio === 'whatsapp' && (
+            <View style={styles.formGroup}><Text style={styles.label}>Destino WhatsApp *</Text><TextInput style={styles.input} value={formData.whatsappDestino} onChangeText={(text) => updateFormData('whatsappDestino', text)} placeholder="Ex: +55 11 99999-9999" placeholderTextColor="#999" /></View>
+          )}
+          <View style={styles.formGroup}>
+            <View style={styles.switchContainer}>
+              <View style={styles.switchInfo}><Text style={styles.label}>Setor Ativo</Text><Text style={styles.switchDescription}>Setores ativos aparecem na seleção de produtos</Text></View>
+              <Switch value={formData.ativo} onValueChange={(value) => updateFormData('ativo', value)} trackColor={{ false: '#ccc', true: '#4CAF50' }} thumbColor={formData.ativo ? '#fff' : '#f4f3f4'} />
+            </View>
+          </View>
+        </View>
+      </ScrollView>
+      <View style={styles.footer}>
+        <TouchableOpacity style={[styles.saveButton, loading && styles.saveButtonDisabled]} onPress={handleSave} disabled={loading}>
+          {loading ? <ActivityIndicator size="small" color="#fff" /> : (<><Ionicons name="save" size={20} color="#fff" /><Text style={styles.saveButtonText}>{isEditing ? 'Atualizar Setor' : 'Salvar Setor'}</Text></>)}
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  header: { backgroundColor: '#2196F3', flexDirection: 'row', alignItems: 'center', paddingTop: 50, paddingBottom: 16, paddingHorizontal: 16 },
+  backButton: { padding: 8 },
+  headerTitle: { flex: 1, fontSize: 20, fontWeight: 'bold', color: '#fff', textAlign: 'center', marginRight: 40 },
+  content: { flex: 1 },
+  form: { padding: 20 },
+  formGroup: { marginBottom: 20 },
+  label: { fontSize: 16, fontWeight: '600', color: '#333', marginBottom: 8 },
+  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 16, paddingVertical: 12, fontSize: 16, backgroundColor: '#fff', color: '#333' },
+  textArea: { height: 80, textAlignVertical: 'top' },
+  switchContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', padding: 16, borderRadius: 8, borderWidth: 1, borderColor: '#ddd' },
+  switchInfo: { flex: 1, marginRight: 16 },
+  switchDescription: { fontSize: 14, color: '#666', marginTop: 4 },
+  footer: { padding: 20, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#e0e0e0' },
+  saveButton: { backgroundColor: '#4CAF50', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 8 },
+  saveButtonDisabled: { backgroundColor: '#ccc' },
+  saveButtonText: { color: '#fff', fontSize: 16, fontWeight: '600', marginLeft: 8 },
+  modeRow: { flexDirection: 'row' },
+  modeBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: '#ddd', backgroundColor: '#fff', marginRight: 8 },
+  modeBtnActive: { backgroundColor: '#2196F3', borderColor: '#2196F3' },
+  modeText: { marginLeft: 8, color: '#666', fontWeight: '600' },
+  modeTextActive: { color: '#fff' },
+  accessDenied: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, backgroundColor: '#f5f5f5' },
+  accessDeniedText: { fontSize: 24, fontWeight: 'bold', color: '#666', marginTop: 16 },
+  accessDeniedSubtext: { fontSize: 16, color: '#888', textAlign: 'center', marginTop: 8 },
+});

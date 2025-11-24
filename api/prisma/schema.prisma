@@ -52,6 +52,7 @@ model Product {
   disponivel          Boolean  @default(true)
   dataInclusao        DateTime @default(now())
   saleItems           SaleItem[]
+  setoresImpressao    SetorImpressao[]
 }
 
 model ProductGroup {
@@ -153,6 +154,22 @@ model UnidadeMedida {
   ativo        Boolean  @default(true)
   dataInclusao DateTime @default(now())
   products     Product[]
+}
+
+enum ModoEnvio {
+  impressora
+  whatsapp
+}
+
+model SetorImpressao {
+  id             Int        @id @default(autoincrement())
+  nome           String     @unique
+  descricao      String?
+  modoEnvio      ModoEnvio  @default(impressora)
+  whatsappDestino String?
+  ativo          Boolean    @default(true)
+  dataInclusao   DateTime   @default(now())
+  produtos       Product[]
 }
 
 model Categoria {

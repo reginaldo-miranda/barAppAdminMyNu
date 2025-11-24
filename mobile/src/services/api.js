@@ -357,6 +357,8 @@ export const productService = {
   getUsedCategories: () => api.get('/product/categories/used'),
   getUsedTypes: () => api.get('/product/types/used'),
   getUsedGroups: () => api.get('/product/groups/used'),
+  getUsedSectors: () => api.get('/product/setores/used'),
+  listBySector: (sectorId) => api.get('/product/list', { params: { setorId: sectorId } }),
 };
 
 export const categoryService = {
@@ -390,6 +392,15 @@ export const unidadeMedidaService = {
   create: (data) => api.post('/unidade-medida/create', data),
   update: (id, data) => api.put(`/unidade-medida/update/${id}`, data),
   delete: (id) => api.delete(`/unidade-medida/delete/${id}`),
+};
+
+export const setorImpressaoService = {
+  list: () => api.get('/setor-impressao/list'),
+  getAll: async () => (await api.get('/setor-impressao/list')).data,
+  getById: (id) => api.get(`/setor-impressao/${id}`),
+  create: (data) => api.post('/setor-impressao/create', data),
+  update: (id, data) => api.put(`/setor-impressao/update/${id}`, data),
+  delete: (id) => api.delete(`/setor-impressao/delete/${id}`),
 };
 
 export const saleService = {

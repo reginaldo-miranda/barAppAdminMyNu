@@ -16,7 +16,7 @@ import { events } from '../../src/utils/eventBus';
 import { testApiConnection, getCurrentBaseUrl } from '../../src/services/api';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { useProduct } from '../../src/contexts/ProductContext';
-import { productService, categoryService } from '../../src/services/api';
+import { productService, categoryService, setorImpressaoService } from '../../src/services/api';
 import SearchAndFilter from '../../src/components/SearchAndFilter';
 
 interface Produto {
@@ -50,21 +50,26 @@ export default function ListagemProdutos() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [filteredProdutos, setFilteredProdutos] = useState<Produto[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [setores, setSetores] = useState<{ id: string; nome: string }[]>([]);
   const [searchText, setSearchText] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedSectorId, setSelectedSectorId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [dbTarget, setDbTarget] = useState('');
   const [apiHost, setApiHost] = useState('');
 
-  const loadProdutos = async () => {
+  const loadProdutos = async (sectorId?: string) => {
     try {
-      const [produtosResponse, categoriasResponse] = await Promise.all([
-        productService.getAll(),
-        categoryService.getAll()
+      const reqProducts = sectorId ? productService.listBySector(Number(sectorId)) : productService.getAll();
+      const [produtosResponse, categoriasResponse, setoresResponse] = await Promise.all([
+        reqProducts,
+        categoryService.getAll(),
+        setorImpressaoService.list()
       ]);
       setProdutos(produtosResponse.data);
       setCategorias(categoriasResponse);
+      setSetores((setoresResponse.data || []).map((s: any) => ({ id: String(s.id ?? s._id), nome: s.nome })));
     } catch (error) {
       Alert.alert('Erro', 'Erro ao carregar dados.');
     } finally {
@@ -95,9 +100,9 @@ export default function ListagemProdutos() {
 
   useEffect(() => {
     if (hasPermission('produtos')) {
-      loadProdutos();
+      loadProdutos(selectedSectorId || undefined);
     }
-  }, [hasPermission]);
+  }, [hasPermission, selectedSectorId]);
 
   useEffect(() => {
     filterProdutos();
@@ -347,6 +352,10 @@ export default function ListagemProdutos() {
     setSelectedCategory(filterKey);
   };
 
+  const handleSectorChange = (id: string) => {
+    setSelectedSectorId(prev => (prev === id ? '' : id));
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -354,12 +363,20 @@ export default function ListagemProdutos() {
           <Ionicons name="arrow-back" size={24} color="#2196F3" />
         </TouchableOpacity>
         <Text style={styles.title}>Produtos ({filteredProdutos.length}) • Base: {dbTarget ? dbTarget.toUpperCase() : 'N/A'}</Text>
-        <TouchableOpacity 
-          onPress={() => router.push('/produtos/cadastro' as any)} 
-          style={styles.addButton}
-        >
-          <Ionicons name="add" size={24} color="#2196F3" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row' }}>
+          <TouchableOpacity 
+            onPress={() => router.push('/setores/listagem' as any)} 
+            style={styles.addButton}
+          >
+            <Ionicons name="print" size={24} color="#2196F3" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            onPress={() => router.push('/produtos/cadastro' as any)} 
+            style={styles.addButton}
+          >
+            <Ionicons name="add" size={24} color="#2196F3" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <SearchAndFilter
@@ -371,6 +388,24 @@ export default function ListagemProdutos() {
         onFilterChange={handleFilterChange}
         style={{ marginHorizontal: 16, marginBottom: 8 }}
       />
+
+      <View style={{ flexDirection: 'row', marginHorizontal: 16, marginBottom: 8, flexWrap: 'wrap' }}>
+        <TouchableOpacity
+          onPress={() => handleSectorChange('')}
+          style={{ paddingVertical: 6, paddingHorizontal: 10, borderRadius: 16, borderWidth: 1, borderColor: selectedSectorId === '' ? '#2196F3' : '#ddd', backgroundColor: selectedSectorId === '' ? '#E3F2FD' : '#fff', marginRight: 8, marginBottom: 6 }}
+        >
+          <Text style={{ color: selectedSectorId === '' ? '#2196F3' : '#333' }}>Todos os setores</Text>
+        </TouchableOpacity>
+        {setores.map(s => (
+          <TouchableOpacity
+            key={s.id}
+            onPress={() => handleSectorChange(s.id)}
+            style={{ paddingVertical: 6, paddingHorizontal: 10, borderRadius: 16, borderWidth: 1, borderColor: selectedSectorId === s.id ? '#2196F3' : '#ddd', backgroundColor: selectedSectorId === s.id ? '#E3F2FD' : '#fff', marginRight: 8, marginBottom: 6 }}
+          >
+            <Text style={{ color: selectedSectorId === s.id ? '#2196F3' : '#333' }}>{s.nome}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
 
       <FlatList
         data={filteredProdutos}

@@ -20,7 +20,7 @@ router.get("/", async (req, res) => {
 router.post("/create", async (req, res) => {
   try {
     const prisma = getActivePrisma();
-    const { nome, descricao, preco, precoVenda, precoCusto, categoria, tipo, grupo, unidade, estoque, quantidade, estoqueMinimo, ativo, dadosFiscais, imagem, tempoPreparoMinutos, disponivel, categoriaId, tipoId, unidadeMedidaId, groupId } = req.body;
+    const { nome, descricao, preco, precoVenda, precoCusto, categoria, tipo, grupo, unidade, estoque, quantidade, estoqueMinimo, ativo, dadosFiscais, imagem, tempoPreparoMinutos, disponivel, categoriaId, tipoId, unidadeMedidaId, groupId, setoresImpressaoIds } = req.body;
 
     const pv = precoVenda ?? preco ?? 0;
     const pc = precoCusto ?? 0;
@@ -59,6 +59,13 @@ router.post("/create", async (req, res) => {
         disponivel: disponivel ?? true
       }
     });
+
+    try {
+      const ids = Array.isArray(setoresImpressaoIds) ? setoresImpressaoIds.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0) : [];
+      for (const sid of ids) {
+        await prisma.$executeRawUnsafe(`INSERT IGNORE INTO \`ProductSetorImpressao\` (productId, setorId) VALUES (${Number(novoProduto.id)}, ${sid})`);
+      }
+    } catch {}
     
     res.status(201).json({ message: "Produto cadastrado com sucesso", product: novoProduto });
   } catch (error) {
@@ -71,7 +78,7 @@ router.post("/create", async (req, res) => {
 router.get("/list", async (req, res) => {
   try {
     const prisma = getActivePrisma();
-    const { categoriaId, categoria, tipoId, tipo, groupId, grupo, unidade } = req.query;
+    const { categoriaId, categoria, tipoId, tipo, groupId, grupo, unidade, setorId, setorNome } = req.query;
     const where = { ativo: true };
     const catId = Number(categoriaId);
     const tipId = Number(tipoId);
@@ -84,10 +91,28 @@ router.get("/list", async (req, res) => {
     if (grupo) where.grupo = String(grupo);
     if (unidade) where.unidade = String(unidade);
     let products = [];
+    let idsFilter = undefined;
+    const sId = Number(setorId);
+    if (Number.isInteger(sId) && sId > 0) {
+      try {
+        const rows = await prisma.$queryRawUnsafe(`SELECT p.id AS id FROM \`Product\` p JOIN \`ProductSetorImpressao\` psi ON psi.productId = p.id WHERE psi.setorId = ${sId}`);
+        const ids = Array.isArray(rows) ? rows.map((r) => Number(r.id)).filter((n) => Number.isInteger(n) && n > 0) : [];
+        idsFilter = ids.length > 0 ? ids : [-1];
+      } catch {}
+    } else if (setorNome) {
+      try {
+        const nome = String(setorNome).trim();
+        const rows = await prisma.$queryRawUnsafe(`SELECT p.id AS id FROM \`Product\` p JOIN \`ProductSetorImpressao\` psi ON psi.productId = p.id JOIN \`SetorImpressao\` s ON s.id = psi.setorId WHERE s.nome = '${nome.replace(/'/g, "''")}'`);
+        const ids = Array.isArray(rows) ? rows.map((r) => Number(r.id)).filter((n) => Number.isInteger(n) && n > 0) : [];
+        idsFilter = ids.length > 0 ? ids : [-1];
+      } catch {}
+    }
     try {
-      products = await prisma.product.findMany({ where, orderBy: { dataInclusao: 'desc' } });
+      const w = idsFilter ? { ...where, id: { in: idsFilter } } : where;
+      products = await prisma.product.findMany({ where: w, orderBy: { dataInclusao: 'desc' } });
     } catch (e) {
-      products = await prisma.product.findMany({ where, orderBy: { id: 'desc' } });
+      const w = idsFilter ? { ...where, id: { in: idsFilter } } : where;
+      products = await prisma.product.findMany({ where: w, orderBy: { id: 'desc' } });
     }
     const num = (v) => Number(v);
     res.json(products.map(p => ({ ...p, precoCusto: num(p.precoCusto), precoVenda: num(p.precoVenda) })));
@@ -225,7 +250,12 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ error: "Produto não encontrado" });
     }
     const num = (v) => Number(v);
-    res.json({ ...product, precoCusto: num(product.precoCusto), precoVenda: num(product.precoVenda) });
+    let setoresIds = [];
+    try {
+      const rows = await prisma.$queryRawUnsafe(`SELECT setorId AS id FROM \`ProductSetorImpressao\` WHERE productId = ${id}`);
+      setoresIds = Array.isArray(rows) ? rows.map(r => Number(r.id)).filter(n => Number.isInteger(n) && n > 0) : [];
+    } catch {}
+    res.json({ ...product, precoCusto: num(product.precoCusto), precoVenda: num(product.precoVenda), setoresImpressaoIds: setoresIds });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Erro ao buscar produto" });
@@ -241,7 +271,7 @@ router.put("/update/:id", async (req, res) => {
       return res.status(400).json({ error: "ID inválido" });
     }
 
-    const { nome, descricao, precoCusto, precoVenda, categoria, tipo, grupo, unidade, ativo, dadosFiscais, quantidade, imagem, tempoPreparoMinutos, disponivel, preco, estoque, categoriaId, tipoId, unidadeMedidaId, groupId } = req.body;
+    const { nome, descricao, precoCusto, precoVenda, categoria, tipo, grupo, unidade, ativo, dadosFiscais, quantidade, imagem, tempoPreparoMinutos, disponivel, preco, estoque, categoriaId, tipoId, unidadeMedidaId, groupId, setoresImpressaoIds } = req.body;
     
     const updateData = {
       nome,
@@ -265,6 +295,16 @@ router.put("/update/:id", async (req, res) => {
     };
 
     const updatedProduct = await prisma.product.update({ where: { id }, data: updateData });
+
+    try {
+      if (Array.isArray(setoresImpressaoIds)) {
+        await prisma.$executeRawUnsafe(`DELETE FROM \`ProductSetorImpressao\` WHERE productId = ${id}`);
+        const ids = setoresImpressaoIds.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0);
+        for (const sid of ids) {
+          await prisma.$executeRawUnsafe(`INSERT IGNORE INTO \`ProductSetorImpressao\` (productId, setorId) VALUES (${id}, ${sid})`);
+        }
+      }
+    } catch {}
     
     res.json({ message: 'Produto atualizado com sucesso', product: updatedProduct });
   } catch (error) {
@@ -362,3 +402,13 @@ router.delete("/:id", async (req, res) => {
 });
 
 export default router;
+router.get('/setores/used', async (req, res) => {
+  try {
+    const prisma = getActivePrisma();
+    const rows = await prisma.$queryRawUnsafe('SELECT DISTINCT s.id AS id, s.nome AS label FROM `SetorImpressao` s INNER JOIN `ProductSetorImpressao` psi ON psi.setorId = s.id INNER JOIN `Product` p ON p.id = psi.productId WHERE p.ativo = true AND s.ativo = true ORDER BY s.nome ASC');
+    const used = Array.isArray(rows) ? rows.map((r) => ({ id: r.id, label: r.label })) : [];
+    res.json(used);
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao listar setores usados' });
+  }
+});
