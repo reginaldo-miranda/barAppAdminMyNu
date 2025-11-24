@@ -119,9 +119,8 @@ export default function SaleScreen() {
 
   // Helper: confirmação via Alert (usado apenas para remoção explícita)
   const confirmRemoveAlert = (itemName: string): Promise<boolean> => {
-    // Web (Expo Web/desktop): usar confirmação nativa do navegador
-    if ((typeof window !== 'undefined') && (Platform as any)?.OS === 'web') {
-      const ok = window.confirm(`Tem certeza que deseja remover ${itemName}?`);
+    if ((typeof window !== 'undefined') && (Platform as any)?.OS === 'web' && typeof (window as any).confirm === 'function') {
+      const ok = (window as any).confirm(`Tem certeza que deseja remover ${itemName}?`);
       return Promise.resolve(ok);
     }
 
@@ -678,8 +677,8 @@ export default function SaleScreen() {
             const msg = nextQty <= 0
               ? `Zerar quantidade e remover ${item?.nomeProduto}?`
               : `Diminuir quantidade de ${item?.nomeProduto}?`;
-            if (typeof window !== 'undefined') {
-              const ok = window.confirm(msg);
+            if ((typeof window !== 'undefined') && (Platform as any)?.OS === 'web' && typeof (window as any).confirm === 'function') {
+              const ok = (window as any).confirm(msg);
               if (ok) updateCartItem(item, nextQty);
             } else {
               Alert.alert(

@@ -41,6 +41,11 @@ interface Mesa {
     _id: string;
     nome: string;
   };
+  vendaAtual?: {
+    _id?: string;
+    id?: number;
+    total?: number;
+  };
 }
 
 export default function MesasScreen() {
@@ -50,6 +55,7 @@ export default function MesasScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
+  const [mesaOpenTotals, setMesaOpenTotals] = useState<Record<string, number>>({});
   
   // Estados para modais
   const [gerarMesasModalVisible, setGerarMesasModalVisible] = useState(false);
@@ -146,16 +152,17 @@ export default function MesasScreen() {
     try {
       setLoading(true);
       const response = await mesaService.list();
-      
-      // Verificação automática de consistência: se uma mesa tem vendaAtual mas status não é ocupada
-      const mesasData = response.data || [];
+      const mesasData = Array.isArray(response?.data) ? response.data : [];
       let needsReload = false;
       
       for (const mesa of mesasData) {
-        if (mesa.vendaAtual && mesa.status !== 'ocupada') {
+        if (mesa?.vendaAtual && mesa?.status !== 'ocupada') {
           try {
-            await mesaService.update(mesa._id, { status: 'ocupada' });
-            needsReload = true;
+            const idToUpdate = mesa?._id ?? mesa?.id;
+            if (idToUpdate != null) {
+              await mesaService.update(idToUpdate, { status: 'ocupada' });
+              needsReload = true;
+            }
           } catch (updateError) {
             console.error('Erro ao corrigir status da mesa:', mesa.numero, updateError);
           }
@@ -165,7 +172,7 @@ export default function MesasScreen() {
       // Se houve correções, recarrega os dados
       if (needsReload) {
         const updatedResponse = await mesaService.list();
-        setMesas(updatedResponse.data || []);
+        setMesas(Array.isArray(updatedResponse?.data) ? updatedResponse.data : []);
       } else {
         setMesas(mesasData);
       }
@@ -184,6 +191,27 @@ export default function MesasScreen() {
       setMesas(mesasData);
     } catch {}
   }
+
+  useEffect(() => {
+    try {
+      const ocupadas = (Array.isArray(mesas) ? mesas : []).filter((m) => m?.status === 'ocupada');
+      ocupadas.forEach(async (m) => {
+        const idStr = String(m?._id ?? (m as any)?.id ?? '');
+        if (!idStr) return;
+        try {
+          const resp = await saleService.getByMesa(m._id ?? (m as any)?.id);
+          const sales = Array.isArray(resp?.data) ? resp.data : [];
+          const aberta = sales.find((s: any) => String(s?.status || '').toLowerCase() === 'aberta');
+          const itens = Array.isArray(aberta?.itens) ? aberta.itens : [];
+          const total = itens.reduce((sum: number, it: any) => sum + Number(it?.subtotal ?? (Number(it?.quantidade) * Number(it?.precoUnitario))), 0);
+          const idNum = Number((m as any)?.id || 0);
+          const k1 = idStr;
+          const k2 = idNum ? String(idNum) : undefined;
+          setMesaOpenTotals((prev) => ({ ...prev, [k1]: total, ...(k2 ? { [k2]: total } : {}) }));
+        } catch {}
+      });
+    } catch {}
+  }, [mesas]);
 
   async function loadFuncionarios() {
     try {
@@ -248,6 +276,11 @@ export default function MesasScreen() {
                       }
                       return m;
                     }));
+                    try {
+                      const itens = Array.isArray(v?.itens) ? v.itens : [];
+                      const t = itens.reduce((acc: number, it: any) => acc + Number(it?.subtotal ?? (Number(it?.quantidade) * Number(it?.precoUnitario))), 0);
+                      setMesaOpenTotals((prev) => ({ ...prev, [String(mesaId)]: t }));
+                    } catch {}
                   } else {
                     await scheduleFetch();
                   }
@@ -846,8 +879,16 @@ export default function MesasScreen() {
         <View style={styles.mesaHeader}>
           <Text style={styles.mesaNumero}>
             Mesa {item.numero}
-            {(item.nomeResponsavel || item.funcionarioResponsavel?.nome) && 
-              ` - Responsável: ${item.nomeResponsavel || item.funcionarioResponsavel?.nome}`
+            {(item.nomeResponsavel || item.funcionarioResponsavel?.nome) &&
+              (() => {
+                const id = String(item?._id ?? (item as any)?.id ?? '');
+                const vt = item?.vendaAtual?.total;
+                const mapTotal = id ? mesaOpenTotals[id] : undefined;
+                const display = vt != null && Number(vt) > 0 ? Number(vt) : (mapTotal != null ? Number(mapTotal) : 0);
+                const valor = display.toFixed(2).replace('.', ',');
+                const prefix = display > 0 ? ` - Responsável: R$ ${valor} - ` : ' - Responsável: ';
+                return `${prefix}${item.nomeResponsavel || item.funcionarioResponsavel?.nome}`;
+              })()
             }
           </Text>
           <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>

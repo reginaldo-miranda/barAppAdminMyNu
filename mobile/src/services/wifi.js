@@ -7,7 +7,7 @@ async function ensureWifiLib() {
   try {
     // Lazy require para evitar erro no Web/Expo Go
     WifiManager = require('react-native-wifi-reborn').default || require('react-native-wifi-reborn');
-  } catch (e) {
+  } catch (_e) {
     WifiManager = null;
   }
   return WifiManager;
@@ -51,7 +51,7 @@ export async function scanWifiNetworks() {
       signal: item?.level ?? undefined,
       security: item?.capabilities || item?.capabilitiesString || undefined,
     })).filter((n) => n.ssid);
-  } catch (e) {
+  } catch (_e) {
     // Falha na leitura -> retorna vazio para permitir fluxo manual
     return [];
   }

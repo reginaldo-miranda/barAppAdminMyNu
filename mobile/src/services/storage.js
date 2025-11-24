@@ -4,7 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 async function isSecureStoreAvailable() {
   try {
     return await SecureStore.isAvailableAsync?.();
-  } catch (e) {
+  } catch (_e) {
     return false;
   }
 }

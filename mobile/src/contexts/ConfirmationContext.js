@@ -144,11 +144,7 @@ export const ConfirmationProvider = ({ children }) => {
         <View style={styles.overlay}>
           <View style={styles.modal}>
             <View style={styles.iconContainer}>
-              <Ionicons 
-                name={icon} 
-                size={48} 
-                color={color} 
-              />
+              <Ionicons name={icon} size={48} color={color} />
             </View>
             
             <Text style={styles.title}>
