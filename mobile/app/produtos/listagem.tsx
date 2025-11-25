@@ -54,6 +54,8 @@ export default function ListagemProdutos() {
   const [searchText, setSearchText] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedSectorId, setSelectedSectorId] = useState<string>('');
+  const [savingSector, setSavingSector] = useState(false);
+  const [successToast, setSuccessToast] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [dbTarget, setDbTarget] = useState('');
@@ -62,16 +64,24 @@ export default function ListagemProdutos() {
   const loadProdutos = async (sectorId?: string) => {
     try {
       const reqProducts = sectorId ? productService.listBySector(Number(sectorId)) : productService.getAll();
-      const [produtosResponse, categoriasResponse, setoresResponse] = await Promise.all([
-        reqProducts,
-        categoryService.getAll(),
-        setorImpressaoService.list()
-      ]);
-      setProdutos(produtosResponse.data);
-      setCategorias(categoriasResponse);
-      setSetores((setoresResponse.data || []).map((s: any) => ({ id: String(s.id ?? s._id), nome: s.nome })));
+      const produtosResponse = await reqProducts;
+      setProdutos(produtosResponse?.data || []);
+
+      try {
+        const categoriasResponse = await categoryService.getAll();
+        setCategorias(categoriasResponse || []);
+      } catch {
+        setCategorias([]);
+      }
+
+      try {
+        const setoresResponse = await setorImpressaoService.list();
+        setSetores((setoresResponse?.data || []).map((s: any) => ({ id: String(s.id ?? s._id), nome: s.nome })));
+      } catch {
+        setSetores([]);
+      }
     } catch (error) {
-      Alert.alert('Erro', 'Erro ao carregar dados.');
+      Alert.alert('Erro', 'Erro ao carregar produtos.');
     } finally {
       setLoading(false);
     }
@@ -99,10 +109,8 @@ export default function ListagemProdutos() {
   };
 
   useEffect(() => {
-    if (hasPermission('produtos')) {
-      loadProdutos(selectedSectorId || undefined);
-    }
-  }, [hasPermission, selectedSectorId]);
+    loadProdutos(selectedSectorId || undefined);
+  }, [selectedSectorId]);
 
   useEffect(() => {
     filterProdutos();
@@ -110,29 +118,21 @@ export default function ListagemProdutos() {
 
   // Escuta mudanças no refreshTrigger para atualizar automaticamente
   useEffect(() => {
-    if (refreshTrigger > 0 && hasPermission('produtos')) {
+    if (refreshTrigger > 0) {
       loadProdutos();
-      
-      // Mostra mensagem de confirmação baseada na ação
       if (lastAction === 'create') {
-        setTimeout(() => {
-          Alert.alert('Sucesso', 'Produto cadastrado com sucesso!');
-        }, 500);
+        setTimeout(() => { Alert.alert('Sucesso', 'Produto cadastrado com sucesso!'); }, 500);
       } else if (lastAction === 'update') {
-        setTimeout(() => {
-          Alert.alert('Sucesso', 'Alterado com sucesso');
-        }, 500);
+        setTimeout(() => { Alert.alert('Sucesso', 'Alterado com sucesso'); }, 500);
       }
     }
-  }, [refreshTrigger, hasPermission, lastAction]);
+  }, [refreshTrigger, lastAction]);
 
   // Atualiza a lista sempre que a tela receber foco (retorno da edição)
   useFocusEffect(
     useCallback(() => {
-      if (hasPermission('produtos')) {
-        loadProdutos();
-      }
-    }, [hasPermission])
+      loadProdutos();
+    }, [])
   );
 
   useEffect(() => {
@@ -210,7 +210,8 @@ export default function ListagemProdutos() {
           onPress: async () => {
             try {
               setLoading(true);
-              await productService.delete(produto._id);
+              const pid = (produto.id !== undefined && produto.id !== null) ? produto.id : (produto._id as any);
+              await productService.delete(pid);
               
               // Recarregar a lista completa para garantir consistência
               await loadProdutos();
@@ -242,7 +243,8 @@ export default function ListagemProdutos() {
           onPress: async () => {
             try {
               setLoading(true);
-              await productService.update(produto._id, { ativo: newStatus });
+              const pid = (produto.id !== undefined && produto.id !== null) ? produto.id : (produto._id as any);
+              await productService.update(pid, { ativo: newStatus });
               
               // Recarregar a lista completa para garantir consistência
               await loadProdutos();
@@ -356,6 +358,31 @@ export default function ListagemProdutos() {
     setSelectedSectorId(prev => (prev === id ? '' : id));
   };
 
+  const saveSelectedSector = async () => {
+    if (!selectedSectorId) {
+      Alert.alert('Erro', 'Selecione um setor de impressão');
+      return { ok: false } as any;
+    }
+    try {
+      setSavingSector(true);
+      const resp = await setorImpressaoService.select(Number(selectedSectorId));
+      const ok = !!resp?.data?.ok;
+      if (ok) {
+        setSuccessToast(true);
+        setTimeout(() => setSuccessToast(false), 3000);
+        return { ok: true } as any;
+      }
+      Alert.alert('Erro', 'Falha ao gravar setor de impressão');
+      return { ok: false } as any;
+    } catch (e: any) {
+      const msg = String(e?.message || '').toLowerCase().includes('network') ? 'Falha na conexão com o banco de dados' : 'Erro ao gravar setor de impressão';
+      Alert.alert('Erro', msg);
+      return { ok: false } as any;
+    } finally {
+      setSavingSector(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -365,13 +392,13 @@ export default function ListagemProdutos() {
         <Text style={styles.title}>Produtos ({filteredProdutos.length}) • Base: {dbTarget ? dbTarget.toUpperCase() : 'N/A'}</Text>
         <View style={{ flexDirection: 'row' }}>
           <TouchableOpacity 
-            onPress={() => router.push('/setores/listagem' as any)} 
+            onPress={async () => { await saveSelectedSector(); router.push('/setores/listagem' as any); }} 
             style={styles.addButton}
           >
             <Ionicons name="print" size={24} color="#2196F3" />
           </TouchableOpacity>
           <TouchableOpacity 
-            onPress={() => router.push('/produtos/cadastro' as any)} 
+            onPress={async () => { await saveSelectedSector(); router.push('/produtos/cadastro' as any); }} 
             style={styles.addButton}
           >
             <Ionicons name="add" size={24} color="#2196F3" />
@@ -410,7 +437,7 @@ export default function ListagemProdutos() {
       <FlatList
         data={filteredProdutos}
         renderItem={renderProduto}
-        keyExtractor={(item) => item._id}
+        keyExtractor={(item) => (item._id ? String(item._id) : String(item.id))}
         style={styles.list}
         contentContainerStyle={[
           styles.listContent,
@@ -439,6 +466,18 @@ export default function ListagemProdutos() {
           </View>
         }
       />
+      {savingSector && (
+        <View style={{ position: 'absolute', top: 16, right: 16, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center' }}>
+          <ActivityIndicator size="small" color="#fff" />
+          <Text style={{ color: '#fff', marginLeft: 8 }}>Gravando setor...</Text>
+        </View>
+      )}
+      {successToast && (
+        <View style={{ position: 'absolute', top: 16, alignSelf: 'center', backgroundColor: '#E8F5E9', borderRadius: 24, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#A5D6A7' }}>
+          <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
+          <Text style={{ color: '#2E7D32', marginLeft: 8 }}>Setor de impressão gravado com sucesso!</Text>
+        </View>
+      )}
     </SafeAreaView>
   );
 }

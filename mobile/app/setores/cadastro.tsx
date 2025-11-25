@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView,
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/contexts/AuthContext';
-import { setorImpressaoService } from '../../src/services/api';
+import { setorImpressaoService, printerService } from '../../src/services/api';
 
 type ModoEnvio = 'impressora' | 'whatsapp';
 
@@ -22,8 +22,12 @@ export default function CadastroSetorScreen() {
   const [loading, setLoading] = useState(false);
   const [loadingRecord, setLoadingRecord] = useState(false);
   const [formData, setFormData] = useState<SetorFormData>({ nome: '', descricao: '', modoEnvio: 'impressora', whatsappDestino: '', ativo: true });
+  const [printers, setPrinters] = useState<{ id: string; nome: string }[]>([]);
+  const [selectedPrinterId, setSelectedPrinterId] = useState<string>('');
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => { if (isEditing && id) loadRecord(id as string); }, [isEditing, id]);
+  useEffect(() => { loadPrinters(); }, []);
 
   const loadRecord = async (recordId: string) => {
     setLoadingRecord(true);
@@ -31,10 +35,21 @@ export default function CadastroSetorScreen() {
       const response = await setorImpressaoService.getById(recordId);
       const s = response.data;
       setFormData({ nome: s.nome, descricao: s.descricao || '', modoEnvio: (s.modoEnvio || 'impressora'), whatsappDestino: s.whatsappDestino || '', ativo: !!s.ativo });
+      setSelectedPrinterId(s.printerId ? String(s.printerId) : '');
     } catch (error) {
       Alert.alert('Erro', 'Não foi possível carregar os dados do setor.');
       router.back();
     } finally { setLoadingRecord(false); }
+  };
+
+  const loadPrinters = async () => {
+    try {
+      const resp = await printerService.list();
+      const data = Array.isArray(resp?.data) ? resp.data : [];
+      setPrinters(data.map((p: any) => ({ id: String(p.id ?? p._id), nome: p.nome })));
+    } catch (error) {
+      setPrinters([]);
+    }
   };
 
   if (!hasPermission('produtos')) {
@@ -68,9 +83,20 @@ export default function CadastroSetorScreen() {
     if (formData.modoEnvio === 'whatsapp' && !formData.whatsappDestino.trim()) { Alert.alert('Erro', 'Informe o número/contato do WhatsApp'); return; }
     try {
       setLoading(true);
-      const payload = { nome: formData.nome.trim(), descricao: formData.descricao.trim(), modoEnvio: formData.modoEnvio, whatsappDestino: formData.whatsappDestino.trim(), ativo: formData.ativo };
-      if (isEditing && id) { await setorImpressaoService.update(id as string, payload); } else { await setorImpressaoService.create(payload); }
-      Alert.alert('Sucesso', isEditing ? 'Setor atualizado com sucesso!' : 'Setor cadastrado com sucesso!', [{ text: 'OK', onPress: () => router.back() }]);
+      const payload = { nome: formData.nome.trim(), descricao: formData.descricao.trim(), modoEnvio: formData.modoEnvio, whatsappDestino: formData.whatsappDestino.trim(), printerId: selectedPrinterId ? Number(selectedPrinterId) : undefined, ativo: formData.ativo };
+      if (isEditing && id) {
+        await setorImpressaoService.update(id as string, payload);
+        setSaveSuccess(true);
+        Alert.alert('Sucesso', 'Setor atualizado com sucesso!');
+        setTimeout(() => { setSaveSuccess(false); router.back(); }, 3000);
+      } else {
+        await setorImpressaoService.create(payload);
+        setSaveSuccess(true);
+        Alert.alert('Sucesso', 'Setor de impressão gravado com sucesso!');
+        setTimeout(() => setSaveSuccess(false), 3000);
+        setFormData({ nome: '', descricao: '', modoEnvio: 'impressora', whatsappDestino: '', ativo: true });
+        setSelectedPrinterId('');
+      }
     } catch (error) {
       Alert.alert('Erro', 'Erro ao salvar setor. Verifique sua conexão e tente novamente.');
     } finally { setLoading(false); }
@@ -102,6 +128,21 @@ export default function CadastroSetorScreen() {
               </TouchableOpacity>
             </View>
           </View>
+          {formData.modoEnvio === 'impressora' && (
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Impressora</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                {printers.map((p) => (
+                  <TouchableOpacity key={p.id} onPress={() => setSelectedPrinterId(p.id)} style={{ paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: selectedPrinterId === p.id ? '#2196F3' : '#ddd', backgroundColor: selectedPrinterId === p.id ? '#E3F2FD' : '#fff', marginRight: 8, marginBottom: 8 }}>
+                    <Text style={{ color: selectedPrinterId === p.id ? '#2196F3' : '#333' }}>{p.nome}</Text>
+                  </TouchableOpacity>
+                ))}
+                {printers.length === 0 && (
+                  <Text style={{ color: '#666' }}>Nenhuma impressora cadastrada</Text>
+                )}
+              </View>
+            </View>
+          )}
           {formData.modoEnvio === 'whatsapp' && (
             <View style={styles.formGroup}><Text style={styles.label}>Destino WhatsApp *</Text><TextInput style={styles.input} value={formData.whatsappDestino} onChangeText={(text) => updateFormData('whatsappDestino', text)} placeholder="Ex: +55 11 99999-9999" placeholderTextColor="#999" /></View>
           )}
@@ -118,6 +159,12 @@ export default function CadastroSetorScreen() {
           {loading ? <ActivityIndicator size="small" color="#fff" /> : (<><Ionicons name="save" size={20} color="#fff" /><Text style={styles.saveButtonText}>{isEditing ? 'Atualizar Setor' : 'Salvar Setor'}</Text></>)}
         </TouchableOpacity>
       </View>
+      {saveSuccess && (
+        <View style={{ position: 'absolute', top: 16, alignSelf: 'center', backgroundColor: '#E8F5E9', borderRadius: 24, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#A5D6A7' }}>
+          <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
+          <Text style={{ color: '#2E7D32', marginLeft: 8 }}>Setor de impressão gravado com sucesso!</Text>
+        </View>
+      )}
     </View>
   );
 }

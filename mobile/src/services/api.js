@@ -401,6 +401,16 @@ export const setorImpressaoService = {
   create: (data) => api.post('/setor-impressao/create', data),
   update: (id, data) => api.put(`/setor-impressao/update/${id}`, data),
   delete: (id) => api.delete(`/setor-impressao/delete/${id}`),
+  getSelected: () => api.get('/setor-impressao/selected'),
+  select: (id) => api.post('/setor-impressao/select', { setorId: id }),
+};
+
+export const printerService = {
+  list: () => api.get('/printer/list'),
+  getAll: async () => (await api.get('/printer/list')).data,
+  create: (data) => api.post('/printer/create', data),
+  update: (id, data) => api.put(`/printer/update/${id}`, data),
+  delete: (id) => api.delete(`/printer/delete/${id}`),
 };
 
 export const saleService = {

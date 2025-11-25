@@ -3,13 +3,36 @@ import { getActivePrisma } from "../lib/prisma.js";
 
 const router = express.Router();
 
+// Helper de compatibilidade: normaliza decimais e adiciona _id
+const mapProduct = (p) => {
+  const num = (v) => Number(v);
+  return {
+    _id: String(p.id),
+    id: p.id,
+    nome: p.nome,
+    descricao: p.descricao || null,
+    precoCusto: num(p.precoCusto),
+    precoVenda: num(p.precoVenda),
+    categoria: p.categoria || '',
+    tipo: p.tipo || null,
+    grupo: p.grupo || null,
+    unidade: p.unidade || 'un',
+    quantidade: Number(p.quantidade || 0),
+    ativo: !!p.ativo,
+    disponivel: p.disponivel === undefined ? true : !!p.disponivel,
+    dadosFiscais: p.dadosFiscais || null,
+    imagem: p.imagem || null,
+    tempoPreparoMinutos: Number(p.tempoPreparoMinutos || 0),
+    dataInclusao: p.dataInclusao,
+  };
+};
+
 // Rota padrão GET - redireciona para list
 router.get("/", async (req, res) => {
   try {
     const prisma = getActivePrisma();
     const produtos = await prisma.product.findMany({ where: { ativo: true }, orderBy: { dataInclusao: 'desc' } });
-    const num = (v) => Number(v);
-    res.json(produtos.map(p => ({ ...p, precoCusto: num(p.precoCusto), precoVenda: num(p.precoVenda) })));
+    res.json(produtos.map(mapProduct));
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Erro ao buscar produtos" });
@@ -114,8 +137,7 @@ router.get("/list", async (req, res) => {
       const w = idsFilter ? { ...where, id: { in: idsFilter } } : where;
       products = await prisma.product.findMany({ where: w, orderBy: { id: 'desc' } });
     }
-    const num = (v) => Number(v);
-    res.json(products.map(p => ({ ...p, precoCusto: num(p.precoCusto), precoVenda: num(p.precoVenda) })));
+    res.json(products.map(mapProduct));
   } catch (error) {
     console.error('Erro ao listar produtos:', error?.message || error);
     res.status(500).json({ error: "Erro ao listar produtos", detail: String(error?.message || '') });
@@ -249,13 +271,13 @@ router.get("/:id", async (req, res) => {
     if (!product) {
       return res.status(404).json({ error: "Produto não encontrado" });
     }
-    const num = (v) => Number(v);
     let setoresIds = [];
     try {
       const rows = await prisma.$queryRawUnsafe(`SELECT setorId AS id FROM \`ProductSetorImpressao\` WHERE productId = ${id}`);
       setoresIds = Array.isArray(rows) ? rows.map(r => Number(r.id)).filter(n => Number.isInteger(n) && n > 0) : [];
     } catch {}
-    res.json({ ...product, precoCusto: num(product.precoCusto), precoVenda: num(product.precoVenda), setoresImpressaoIds: setoresIds });
+    const mapped = mapProduct(product);
+    res.json({ ...mapped, setoresImpressaoIds: setoresIds });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Erro ao buscar produto" });
@@ -319,7 +341,7 @@ router.put("/update/:id", async (req, res) => {
 // Rota alternativa para atualizar produto (compatibilidade com frontend)
 router.put("/:id", async (req, res) => {
   try {
-    const prisma = getPrisma();
+    const prisma = getActivePrisma();
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) {
       return res.status(400).json({ error: "ID inválido" });
@@ -362,7 +384,7 @@ router.put("/:id", async (req, res) => {
 // Deleção - optar por soft delete para manter histórico
 router.delete("/delete/:id", async (req, res) => {
   try {
-    const prisma = getPrisma();
+    const prisma = getActivePrisma();
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) {
       return res.status(400).json({ error: "ID inválido" });

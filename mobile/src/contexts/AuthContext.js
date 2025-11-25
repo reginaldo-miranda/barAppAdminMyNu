@@ -82,21 +82,6 @@ export const AuthProvider = ({ children }) => {
       } else {
         setIsAuthenticated(false);
         setUser(null);
-        console.log('🔍 AuthContext: Nenhuma sessão ativa - resetando base e forçando login admin');
-        try {
-          await clearApiBaseUrl();
-          const base = getCurrentBaseUrl();
-          const ping = await testApiConnection(base, undefined);
-          if (!ping?.ok) {
-            console.warn('🔌 API inacessível:', ping?.reason || ping?.status);
-          }
-          const res = await login({ email: 'admin@barapp.com', senha: '123456' });
-          if (!res?.success) {
-            console.warn('🔍 AuthContext: Falha ao forçar login admin');
-          }
-        } catch (e) {
-          console.warn('🔍 AuthContext: Erro ao forçar login admin:', e?.message || e);
-        }
       }
     } catch (error) {
       console.error('🔍 AuthContext: Erro ao verificar autenticação:', error);

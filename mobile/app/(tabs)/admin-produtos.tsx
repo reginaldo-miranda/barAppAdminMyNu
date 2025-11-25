@@ -329,14 +329,17 @@ export default function AdminProdutosScreen() {
   };
 
   const getFilteredAndSortedProducts = () => {
+    const q = String(searchText || '').toLowerCase();
     let filtered = products.filter(product => {
-      const matchesSearch = product.nome.toLowerCase().includes(searchText.toLowerCase()) ||
-                           product.categoria.toLowerCase().includes(searchText.toLowerCase()) ||
-                           product.descricao.toLowerCase().includes(searchText.toLowerCase());
-      
+      const nome = String(product?.nome || '').toLowerCase();
+      const categoria = String(product?.categoria || '').toLowerCase();
+      const descricao = String(product?.descricao || '').toLowerCase();
+
+      const matchesSearch = nome.includes(q) || categoria.includes(q) || descricao.includes(q);
+
       const matchesCategory = !selectedCategory || product.categoria === selectedCategory;
       const matchesActive = filterActive === null || product.ativo === filterActive;
-      
+
       return matchesSearch && matchesCategory && matchesActive;
     });
 
@@ -561,7 +564,7 @@ export default function AdminProdutosScreen() {
         <FlatList
           data={filteredProducts}
           renderItem={renderProductCard}
-          keyExtractor={(item) => item._id}
+          keyExtractor={(item) => (item._id ? String(item._id) : String((item as any).id))}
           ListHeaderComponent={renderHeader}
           numColumns={viewMode === 'grid' ? 2 : 1}
           key={viewMode} // Force re-render when view mode changes

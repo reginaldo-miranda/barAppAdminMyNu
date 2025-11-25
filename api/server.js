@@ -41,6 +41,7 @@ import unidadeMedidaRoutes from "./routes/unidadeMedida.js";
 import categoriaRoutes from "./routes/categoria.js";
 import caixaRoutes from "./routes/caixa.js";
 import setorImpressaoRoutes from "./routes/setorImpressao.js";
+import printerRoutes from "./routes/printer.js";
 
 dotenv.config();
 
@@ -210,6 +211,7 @@ app.use("/api/unidade-medida", authenticate, unidadeMedidaRoutes);
 app.use("/api/categoria", authenticate, categoriaRoutes);
 app.use("/api/caixa", authenticate, caixaRoutes);
 app.use("/api/setor-impressao", authenticate, setorImpressaoRoutes);
+app.use("/api/printer", authenticate, printerRoutes);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, '0.0.0.0', () => console.log(`✅ API rodando em: http://0.0.0.0:${PORT}`));
@@ -227,6 +229,24 @@ prisma.$connect()
     );
     await prisma.$executeRawUnsafe(
       "CREATE TABLE IF NOT EXISTS `ProductSetorImpressao` (\n        `productId` INTEGER NOT NULL,\n        `setorId` INTEGER NOT NULL,\n        PRIMARY KEY (`productId`, `setorId`)\n      ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    );
+    await prisma.$executeRawUnsafe(
+      "CREATE TABLE IF NOT EXISTS `Printer` (\n        `id` INTEGER NOT NULL AUTO_INCREMENT,\n        `nome` VARCHAR(191) NOT NULL,\n        `modelo` VARCHAR(191) NULL,\n        `address` VARCHAR(191) NULL,\n        `driver` VARCHAR(191) NULL,\n        `ativo` BOOLEAN NOT NULL DEFAULT true,\n        `dataInclusao` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),\n        UNIQUE INDEX `Printer_nome_key`(`nome`),\n        PRIMARY KEY (`id`)\n      ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    );
+    await prisma.$executeRawUnsafe(
+      "ALTER TABLE `SetorImpressao` ADD COLUMN IF NOT EXISTS `printerId` INTEGER NULL;"
+    );
+    await prisma.$executeRawUnsafe(
+      "CREATE TABLE IF NOT EXISTS `PrintJob` (\n        `id` INTEGER NOT NULL AUTO_INCREMENT,\n        `saleId` INTEGER NULL,\n        `productId` INTEGER NOT NULL,\n        `setorId` INTEGER NOT NULL,\n        `printerId` INTEGER NULL,\n        `content` TEXT NOT NULL,\n        `status` ENUM('queued','processing','done','failed') NOT NULL DEFAULT 'queued',\n        `error` TEXT NULL,\n        `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),\n        `processedAt` DATETIME(3) NULL,\n        PRIMARY KEY (`id`)\n      ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    );
+    await prisma.$executeRawUnsafe(
+      "CREATE TABLE IF NOT EXISTS `AppSetting` (\n        `key` VARCHAR(191) NOT NULL,\n        `value` VARCHAR(191) NULL,\n        `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),\n        PRIMARY KEY (`key`)\n      ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    );
+    await prisma.$executeRawUnsafe(
+      "CREATE TABLE IF NOT EXISTS `SetorImpressao` (\n        `id` INTEGER NOT NULL AUTO_INCREMENT,\n        `nome` VARCHAR(191) NOT NULL,\n        `descricao` TEXT NULL,\n        `modoEnvio` ENUM('impressora','whatsapp') NOT NULL DEFAULT 'impressora',\n        `whatsappDestino` VARCHAR(191) NULL,\n        `printerId` INTEGER NULL,\n        `ativo` TINYINT(1) NOT NULL DEFAULT 1,\n        `dataInclusao` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),\n        PRIMARY KEY (`id`)\n      ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    );
+    await prisma.$executeRawUnsafe(
+      "CREATE TABLE IF NOT EXISTS `WhatsAppMessageLog` (\n        `id` INTEGER NOT NULL AUTO_INCREMENT,\n        `saleId` INTEGER NULL,\n        `destino` VARCHAR(191) NOT NULL,\n        `content` TEXT NOT NULL,\n        `status` ENUM('queued','sent','failed') NOT NULL DEFAULT 'queued',\n        `error` TEXT NULL,\n        `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),\n        `sentAt` DATETIME(3) NULL,\n        PRIMARY KEY (`id`)\n      ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
     );
   } catch {}
 })();

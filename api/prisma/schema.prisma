@@ -167,9 +167,59 @@ model SetorImpressao {
   descricao      String?
   modoEnvio      ModoEnvio  @default(impressora)
   whatsappDestino String?
+  printerId      Int?
+  printer        Printer?   @relation(fields: [printerId], references: [id], onDelete: SetNull)
   ativo          Boolean    @default(true)
   dataInclusao   DateTime   @default(now())
   produtos       Product[]
+}
+
+model Printer {
+  id           Int       @id @default(autoincrement())
+  nome         String    @unique
+  modelo       String?
+  address      String?
+  driver       String?
+  ativo        Boolean   @default(true)
+  dataInclusao DateTime  @default(now())
+  setores      SetorImpressao[]
+}
+
+enum PrintJobStatus {
+  queued
+  processing
+  done
+  failed
+}
+
+model PrintJob {
+  id          Int             @id @default(autoincrement())
+  saleId      Int?
+  productId   Int
+  setorId     Int
+  printerId   Int?
+  content     String
+  status      PrintJobStatus  @default(queued)
+  error       String?
+  createdAt   DateTime        @default(now())
+  processedAt DateTime?
+}
+
+enum WhatsStatus {
+  queued
+  sent
+  failed
+}
+
+model WhatsAppMessageLog {
+  id        Int          @id @default(autoincrement())
+  saleId    Int?
+  destino   String
+  content   String
+  status    WhatsStatus  @default(queued)
+  error     String?
+  createdAt DateTime     @default(now())
+  sentAt    DateTime?
 }
 
 model Categoria {

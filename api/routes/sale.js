@@ -1,6 +1,8 @@
 import express from 'express';
 
 import { getActivePrisma } from '../lib/prisma.js';
+import { enqueuePrintJob, buildPrintContent } from '../lib/print.js';
+import { queueWhatsAppMessage, formatWhatsappMessage } from '../lib/whatsapp.js';
 import { recordSaleUpdate } from '../lib/events.js';
 
 const router = express.Router();
@@ -453,35 +455,33 @@ router.get('/:id', async (req, res) => {
       },
     });
 
-    let whatsTargets = [];
     try {
-      const setores = await prisma.$queryRawUnsafe(`SELECT s.nome AS nome, s.modoEnvio AS modo, s.whatsappDestino AS whatsappDestino FROM \`SetorImpressao\` s INNER JOIN \`ProductSetorImpressao\` psi ON psi.setorId = s.id WHERE psi.productId = ${prodId} AND s.ativo = 1`);
+      const setores = await prisma.$queryRawUnsafe(`SELECT s.id AS id, s.nome AS nome, s.modoEnvio AS modo, s.whatsappDestino AS whatsappDestino, s.printerId AS printerId FROM \`SetorImpressao\` s INNER JOIN \`ProductSetorImpressao\` psi ON psi.setorId = s.id WHERE psi.productId = ${prodId} AND s.ativo = 1`);
       let cozinha = false;
       let bar = false;
-      let hasWhats = false;
+      const saleRef = { mesa: vendaAtualizada?.mesa || null, comanda: vendaAtualizada?.nomeComanda || null };
+      const it = Array.isArray(vendaAtualizada?.itens) ? vendaAtualizada.itens.find((i) => Number(i.productId) === prodId) : null;
+      const qty = Number(it?.quantidade || quantidade || 1);
       for (const s of Array.isArray(setores) ? setores : []) {
         const nome = String(s.nome || '').toLowerCase();
         const modo = String(s.modo || '').toLowerCase();
-        if (modo === 'whatsapp') hasWhats = true;
-        if (modo === 'whatsapp' && s.whatsappDestino) {
-          const w = String(s.whatsappDestino).trim();
-          if (w) whatsTargets.push(w);
-        }
         if (nome === 'comandas' || nome === 'mesas' || nome === 'cozinha') cozinha = true;
         if (nome === 'balcão' || nome === 'balcao' || nome === 'bar') bar = true;
+        if (modo === 'impressora' && s.printerId) {
+          const content = buildPrintContent({ setorNome: s.nome, saleRef, productNome: it?.product?.nome || produto?.nome || '', quantidade: qty, observacao: it?.observacao || '' });
+          enqueuePrintJob({ saleId: id, productId: prodId, setorId: Number(s.id), printerId: Number(s.printerId), content }).catch(() => {});
+        }
+        if (modo === 'whatsapp' && s.whatsappDestino) {
+          const text = formatWhatsappMessage({ sale: vendaAtualizada, itens: vendaAtualizada?.itens || [] });
+          queueWhatsAppMessage({ saleId: id, to: String(s.whatsappDestino), text }).catch(() => {});
+        }
       }
       if (cozinha || bar) {
         await prisma.sale.update({ where: { id }, data: { impressaoCozinha: cozinha ? true : undefined, impressaoBar: bar ? true : undefined } });
       }
-      if (hasWhats) {
-        try { console.log('[WHATSAPP] Setor definido via WhatsApp para produto', prodId); } catch {}
-      }
     } catch {}
 
     const payload = mapSaleResponse(normalizeSale(vendaAtualizada));
-    if (whatsTargets.length > 0) {
-      payload.whatsTargets = Array.from(new Set(whatsTargets));
-    }
     res.json(payload);
     try { recordSaleUpdate(vendaAtualizada.id); } catch {}
   } catch (error) {
@@ -538,7 +538,7 @@ router.delete('/:id/item/:produtoId', async (req, res) => {
 });
 
 // Atualizar quantidade de item (Prisma)
-router.put('/:id/item/:produtoId', async (req, res) => {
+  router.put('/:id/item/:produtoId', async (req, res) => {
   try {
     const prisma = getActivePrisma();
     const id = Number(req.params.id);
@@ -584,6 +584,25 @@ router.put('/:id/item/:produtoId', async (req, res) => {
         itens: { include: { product: { select: { nome: true, precoVenda: true } } } },
       },
     });
+    try {
+      const setores = await prisma.$queryRawUnsafe(`SELECT s.id AS id, s.nome AS nome, s.modoEnvio AS modo, s.whatsappDestino AS whatsappDestino, s.printerId AS printerId FROM \`SetorImpressao\` s INNER JOIN \`ProductSetorImpressao\` psi ON psi.setorId = s.id WHERE psi.productId = ${prodId} AND s.ativo = 1`);
+      const saleRef = { mesa: vendaAtualizada?.mesa || null, comanda: vendaAtualizada?.nomeComanda || null };
+      const it = Array.isArray(vendaAtualizada?.itens) ? vendaAtualizada.itens.find((i) => Number(i.productId) === prodId) : null;
+      const prevQty = Number(it?.quantidade || 0);
+      if (qnt > prevQty) {
+        for (const s of Array.isArray(setores) ? setores : []) {
+          const modo = String(s.modo || '').toLowerCase();
+          if (modo === 'impressora' && s.printerId) {
+            const content = buildPrintContent({ setorNome: s.nome, saleRef, productNome: it?.product?.nome || '', quantidade: qnt, observacao: it?.observacao || '' });
+            enqueuePrintJob({ saleId: id, productId: prodId, setorId: Number(s.id), printerId: Number(s.printerId), content }).catch(() => {});
+          }
+          if (modo === 'whatsapp' && s.whatsappDestino) {
+            const text = formatWhatsappMessage({ sale: vendaAtualizada, itens: vendaAtualizada?.itens || [] });
+            queueWhatsAppMessage({ saleId: id, to: String(s.whatsappDestino), text }).catch(() => {});
+          }
+        }
+      }
+    } catch {}
 
     res.json(mapSaleResponse(normalizeSale(vendaAtualizada)));
     try { recordSaleUpdate(vendaAtualizada.id); } catch {}
