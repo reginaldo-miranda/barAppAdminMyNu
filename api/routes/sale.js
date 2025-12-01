@@ -575,10 +575,27 @@ router.delete('/:id/item/:produtoId', async (req, res) => {
 
     const prevQty = Number(item.quantidade || 0);
 
-    await prisma.saleItem.update({
-      where: { id: item.id },
-      data: { quantidade: qnt, subtotal: qnt * item.precoUnitario },
-    });
+    const delta = qnt - prevQty;
+    if (delta <= 0) {
+      await prisma.saleItem.update({
+        where: { id: item.id },
+        data: { quantidade: qnt, subtotal: qnt * item.precoUnitario },
+      });
+    } else {
+      // Não altera o item original (mantém status/checkbox). Cria uma nova linha com o delta como "pendente".
+      await prisma.saleItem.create({
+        data: {
+          saleId: venda.id,
+          productId: item.productId,
+          nomeProduto: item.nomeProduto,
+          quantidade: delta,
+          precoUnitario: item.precoUnitario,
+          subtotal: delta * item.precoUnitario,
+          status: 'pendente',
+          createdAt: new Date(),
+        },
+      });
+    }
 
     const vendaAtualizada = await prisma.sale.findUnique({
       where: { id },
@@ -592,12 +609,12 @@ router.delete('/:id/item/:produtoId', async (req, res) => {
       const setores = await prisma.$queryRawUnsafe(`SELECT s.id AS id, s.nome AS nome, s.modoEnvio AS modo, s.whatsappDestino AS whatsappDestino, s.printerId AS printerId FROM \`SetorImpressao\` s INNER JOIN \`ProductSetorImpressao\` psi ON psi.setorId = s.id WHERE psi.productId = ${prodId} AND s.ativo = 1`);
       const saleRef = { mesa: vendaAtualizada?.mesa || null, comanda: vendaAtualizada?.nomeComanda || null };
       const it = Array.isArray(vendaAtualizada?.itens) ? vendaAtualizada.itens.find((i) => Number(i.productId) === prodId) : null;
-      const delta = qnt - prevQty;
-      if (delta > 0) {
+      const deltaNow = qnt - prevQty;
+      if (deltaNow > 0) {
         for (const s of Array.isArray(setores) ? setores : []) {
           const modo = String(s.modo || '').toLowerCase();
           if (modo === 'impressora' && s.printerId) {
-            const content = buildPrintContent({ setorNome: s.nome, saleRef, productNome: it?.product?.nome || '', quantidade: delta, observacao: it?.observacao || '' });
+            const content = buildPrintContent({ setorNome: s.nome, saleRef, productNome: it?.product?.nome || '', quantidade: deltaNow, observacao: it?.observacao || '' });
             enqueuePrintJob({ saleId: id, productId: prodId, setorId: Number(s.id), printerId: Number(s.printerId), content }).catch(() => {});
           }
           if (modo === 'whatsapp' && s.whatsappDestino) {

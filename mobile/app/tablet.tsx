@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useWindowDimensions } from 'react-native';
 import { router } from 'expo-router';
@@ -12,9 +12,11 @@ import { STORAGE_KEYS } from '../src/services/storage';
 
 export default function TabletMode() {
   const { width } = useWindowDimensions();
-  const split = width >= 900;
+  const split = false;
   const [setores, setSetores] = React.useState<any[]>([]);
   const [activeSetorId, setActiveSetorId] = React.useState<number | null>(null);
+  const [activeView, setActiveView] = React.useState<'setor' | 'pronto' | 'entregue'>('setor');
+  const [hiddenDeliveredIds, setHiddenDeliveredIds] = React.useState<number[]>([]);
 
   React.useEffect(() => {
     let alive = true;
@@ -45,13 +47,37 @@ export default function TabletMode() {
   }, []);
 
   const onBack = () => {
-    try {
-      router.back();
-    } catch {
-      try {
-        router.replace('/');
-      } catch {}
+    if (activeView !== 'setor') {
+      setActiveView('setor');
+      return;
     }
+    try { router.back(); } catch { try { router.replace('/'); } catch {} }
+  };
+
+  const marcarStatusEmLote = async (status: 'pronto' | 'entregue') => {
+    if (!activeSetorId) return;
+    try {
+      const resp = await apiService.request({ method: 'GET', url: `/setor-impressao-queue/${activeSetorId}/queue?status=${status === 'pronto' ? 'pendente' : 'pronto'}` });
+      const itens = resp?.data?.data || [];
+      for (const it of itens) {
+        await apiService.request({ method: 'PATCH', url: `/setor-impressao-queue/sale/${it.saleId}/item/${it.id}/status`, data: { status } });
+      }
+      setActiveView(status === 'pronto' ? 'pronto' : 'entregue');
+    } catch {}
+  };
+
+  const limparEntregues = async () => {
+    if (!activeSetorId) return;
+    Alert.alert('Confirmar limpeza', 'Deseja ocultar todos os itens entregues desta tela?', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Confirmar', style: 'destructive', onPress: async () => {
+        try {
+          const resp = await apiService.request({ method: 'GET', url: `/setor-impressao-queue/${activeSetorId}/queue?status=entregue` });
+          const itens = resp?.data?.data || [];
+          setHiddenDeliveredIds(itens.map((i: any) => Number(i.id)).filter(Boolean));
+        } catch {}
+      } }
+    ]);
   };
 
   return (
@@ -61,9 +87,41 @@ export default function TabletMode() {
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.navTitle}>Pedidos</Text>
-        <View style={{ width: 48, height: 48 }} />
+        <View style={styles.navActions}>
+          {activeView === 'setor' ? (
+            <>
+              <TouchableOpacity style={styles.navActionBtn} onPress={() => marcarStatusEmLote('pronto')} activeOpacity={0.85}>
+                <Ionicons name="checkmark-done" size={20} color="#fff" />
+                <Text style={styles.navActionText}>Prontos</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.navActionBtn, { marginLeft: 8 }]} onPress={() => setActiveView('pronto')} activeOpacity={0.85}>
+                <Ionicons name="albums" size={20} color="#fff" />
+                <Text style={styles.navActionText}>Ver Prontos</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.navActionBtn, { marginLeft: 8 }]} onPress={() => setActiveView('entregue')} activeOpacity={0.85}>
+                <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                <Text style={styles.navActionText}>Ver Entregues</Text>
+              </TouchableOpacity>
+            </>
+          ) : activeView === 'pronto' ? (
+            <>
+              <TouchableOpacity style={styles.navActionBtn} onPress={() => marcarStatusEmLote('entregue')} activeOpacity={0.85}>
+                <Ionicons name="checkmark" size={20} color="#fff" />
+                <Text style={styles.navActionText}>Entregar</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <TouchableOpacity style={styles.navActionBtn} onPress={limparEntregues} activeOpacity={0.85}>
+                <Ionicons name="trash" size={20} color="#fff" />
+                <Text style={styles.navActionText}>Limpar entregues</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       </View>
 
+      {activeView === 'setor' && (
       <View style={styles.tabContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsContent}>
           {setores.map((s) => {
@@ -81,46 +139,22 @@ export default function TabletMode() {
           })}
         </ScrollView>
       </View>
+      )}
 
-      <View style={split ? styles.splitContent : styles.content}>
-        {split && setores.length >= 1 ? (
-          (() => {
-            const left = setores.find((s) => Number(s.id) === activeSetorId) || setores[0];
-            const right = setores.find((s) => Number(s.id) !== Number(left?.id));
-            return (
-              <>
-                <View style={styles.column}>
-                  {left && (
-                    String(left.nome || '').toLowerCase().includes('cozinha') ? (
-                      <TabletCozinhaScreen setorIdOverride={Number(left.id)} setorNomeOverride={left.nome} />
-                    ) : (
-                      <TabletBarScreen setorIdOverride={Number(left.id)} setorNomeOverride={left.nome} />
-                    )
-                  )}
-                </View>
-                <View style={styles.column}>
-                  {right && (
-                    String(right.nome || '').toLowerCase().includes('cozinha') ? (
-                      <TabletCozinhaScreen setorIdOverride={Number(right.id)} setorNomeOverride={right.nome} />
-                    ) : (
-                      <TabletBarScreen setorIdOverride={Number(right.id)} setorNomeOverride={right.nome} />
-                    )
-                  )}
-                </View>
-              </>
-            );
-          })()
-        ) : (
-          (() => {
-            const ativo = setores.find((s) => Number(s.id) === activeSetorId);
-            if (!ativo) return null;
-            return ativo.nome?.toLowerCase().includes('cozinha') ? (
-              <TabletCozinhaScreen setorIdOverride={Number(ativo.id)} setorNomeOverride={ativo.nome} />
-            ) : (
-              <TabletBarScreen setorIdOverride={Number(ativo.id)} setorNomeOverride={ativo.nome} />
-            );
-          })()
-        )}
+      <View style={styles.content}>
+        {(() => {
+          const ativo = setores.find((s) => Number(s.id) === activeSetorId);
+          if (!ativo) return null;
+          const compProps: any = { setorIdOverride: Number(ativo.id), setorNomeOverride: ativo.nome };
+          if (activeView === 'pronto') compProps.forceFilterStatus = 'pronto';
+          if (activeView === 'entregue') compProps.forceFilterStatus = 'entregue';
+          compProps.hiddenIds = activeView === 'entregue' ? hiddenDeliveredIds : [];
+          return String(ativo.nome || '').toLowerCase().includes('cozinha') ? (
+            <TabletCozinhaScreen {...compProps} />
+          ) : (
+            <TabletBarScreen {...compProps} />
+          );
+        })()}
       </View>
     </View>
   );
@@ -140,6 +174,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#1e88e5',
+  },
+  navActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  navActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  navActionText: {
+    color: '#fff',
+    marginLeft: 6,
+    fontWeight: '600',
   },
   backButton: {
     width: 48,

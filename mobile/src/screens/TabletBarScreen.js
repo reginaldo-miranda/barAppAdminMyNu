@@ -7,14 +7,14 @@ import { useSetorSync } from '../hooks/useSetorSync';
 import { imprimirPedidoSetor } from '../utils/printSetor';
 
 export default function TabletBarScreen(props = {}) {
-  const { setorIdOverride, setorNomeOverride } = props || {};
+  const { setorIdOverride, setorNomeOverride, forceFilterStatus, hiddenIds } = props || {};
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [setorId, setSetorId] = useState(null);
   const [setorNome, setSetorNome] = useState('Bar');
   const [fadeAnim] = useState(new Animated.Value(1));
   const [sound, setSound] = useState();
-  const [filterStatus, setFilterStatus] = useState('pendente');
+  const [filterStatus, setFilterStatus] = useState(forceFilterStatus || 'pendente');
 
   // Sincronização em tempo real
   const handleUpdate = (updateData) => {
@@ -97,11 +97,13 @@ export default function TabletBarScreen(props = {}) {
       setLoading(true);
       const response = await apiService.request({
         method: 'GET',
-        url: `/setor-impressao-queue/${idSetor}/queue?status=${filterStatus}`
+        url: `/setor-impressao-queue/${idSetor}/queue?status=${forceFilterStatus || filterStatus}`
       });
 
       if (response.data?.success) {
-        setItems(response.data.data);
+        const arr = response.data.data || [];
+        const filtered = Array.isArray(hiddenIds) && hiddenIds.length > 0 ? arr.filter((i) => !hiddenIds.includes(Number(i.id))) : arr;
+        setItems(filtered);
       }
     } catch (error) {
       console.error('Erro ao buscar itens:', error);
@@ -195,7 +197,7 @@ export default function TabletBarScreen(props = {}) {
         }
       }, 30000);
       return () => clearInterval(interval);
-    }, [setorId, setorIdOverride, setorNomeOverride, filterStatus])
+    }, [setorId, setorIdOverride, setorNomeOverride, filterStatus, forceFilterStatus, hiddenIds])
   );
 
   const mesasAgrupadas = agruparPorMesa(items);
@@ -239,9 +241,9 @@ export default function TabletBarScreen(props = {}) {
           <Text style={styles.itemDetail}>Horário: {timeStr}</Text>
         </View>
         {item.status === 'pendente' ? (
-          <TouchableOpacity style={styles.checkbox} onPress={() => alterarStatus(item, 'pronto')} activeOpacity={0.8}>
-            <Ionicons name="checkbox-outline" size={24} color="#4CAF50" />
-            <Text style={styles.checkboxText}>Marcar como pronto</Text>
+          <TouchableOpacity style={[styles.checkbox, { borderColor: '#9E9E9E' }]} onPress={() => alterarStatus(item, 'pronto')} activeOpacity={0.8}>
+            <Ionicons name="square-outline" size={24} color="#616161" />
+            <Text style={[styles.checkboxText, { color: '#616161' }]}>Marcar como pronto</Text>
           </TouchableOpacity>
         ) : item.status === 'pronto' ? (
           <TouchableOpacity style={[styles.checkbox, { borderColor: '#2196F3' }]} onPress={() => alterarStatus(item, 'entregue')} activeOpacity={0.8}>
@@ -311,7 +313,7 @@ export default function TabletBarScreen(props = {}) {
           </TouchableOpacity>
         </View>
         <Text style={styles.headerTitle}>{setorNome}</Text>
-        <Text style={styles.headerSubtitle}>{items.length} pedido(s) {filterStatus === 'pendente' ? 'pendente(s)' : filterStatus === 'pronto' ? 'pronto(s)' : 'entregue(s)'}</Text>
+        <Text style={styles.headerSubtitle}>{forceFilterStatus === 'pronto' ? 'Prontos para entregar' : `${items.length} pedido(s) ${filterStatus === 'pendente' ? 'pendente(s)' : filterStatus === 'pronto' ? 'pronto(s)' : 'entregue(s)'}`}</Text>
         <View style={[styles.connectionStatus, connected ? styles.connected : styles.disconnected]}>
           <Ionicons name={connected ? 'wifi' : 'wifi-off'} size={16} color="#fff" />
           <Text style={styles.connectionText}>
@@ -319,6 +321,7 @@ export default function TabletBarScreen(props = {}) {
           </Text>
         </View>
       </View>
+      {!forceFilterStatus && (
       <View style={styles.filtersRow}>
         <TouchableOpacity onPress={() => { setFilterStatus('pendente'); buscarItensDoSetor(setorId); }} style={[styles.filterChip, filterStatus === 'pendente' && styles.filterChipActive]}>
           <Text style={[styles.filterText, filterStatus === 'pendente' && styles.filterTextActive]}>Em preparação</Text>
@@ -330,6 +333,7 @@ export default function TabletBarScreen(props = {}) {
           <Text style={[styles.filterText, filterStatus === 'entregue' && styles.filterTextActive]}>Entregues</Text>
         </TouchableOpacity>
       </View>
+      )}
       
       <FlatList
         data={[...items].sort((a, b) => new Date(a.horario).getTime() - new Date(b.horario).getTime())}
