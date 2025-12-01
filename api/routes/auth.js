@@ -41,6 +41,7 @@ router.post("/register", async (req, res) => {
 // Rota de login
 router.post("/login", async (req, res) => {
   try {
+    console.log('🔐 Login request received:', req.body);
     const { email, senha, password } = req.body;
     const senhaInput = senha || password;
 
@@ -127,7 +128,8 @@ router.post("/login", async (req, res) => {
     });
   } catch (error) {
     console.error("Erro no login:", error);
-    return res.status(500).json({ error: "Erro no login" });
+    console.error("Stack trace:", error.stack);
+    return res.status(500).json({ error: "Erro interno do servidor" });
   }
 });
 

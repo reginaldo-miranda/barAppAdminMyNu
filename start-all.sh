@@ -30,7 +30,7 @@ kill_by_port() {
 DETECTED_IP=$(ipconfig getifaddr en0 2>/dev/null)
 if [ -z "$DETECTED_IP" ]; then
   DETECTED_IP=$(ipconfig getifaddr en1 2>/dev/null)
-}
+fi
 LAN_IP=${REACT_NATIVE_PACKAGER_HOSTNAME:-$DETECTED_IP}
 if [ -z "$LAN_IP" ]; then
   LAN_IP=192.168.0.176

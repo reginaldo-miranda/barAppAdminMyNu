@@ -424,27 +424,18 @@ router.get('/:id', async (req, res) => {
       return res.status(400).json({ error: 'Produto inativo' });
     }
 
-    const itemExistente = venda.itens.find(item => item.productId === prodId);
-    if (itemExistente) {
-      await prisma.saleItem.update({
-        where: { id: itemExistente.id },
-        data: {
-          quantidade: itemExistente.quantidade + Number(quantidade || 1),
-          subtotal: (itemExistente.quantidade + Number(quantidade || 1)) * itemExistente.precoUnitario,
-        },
-      });
-    } else {
-      await prisma.saleItem.create({
-        data: {
-          saleId: venda.id,
-          productId: prodId,
-          nomeProduto: produto.nome,
-          quantidade: Number(quantidade || 1),
-          precoUnitario: produto.precoVenda,
-          subtotal: Number(quantidade || 1) * produto.precoVenda,
-        },
-      });
-    }
+    await prisma.saleItem.create({
+      data: {
+        saleId: venda.id,
+        productId: prodId,
+        nomeProduto: produto.nome,
+        quantidade: Number(quantidade || 1),
+        precoUnitario: produto.precoVenda,
+        subtotal: Number(quantidade || 1) * produto.precoVenda,
+        status: 'pendente',
+        createdAt: new Date()
+      },
+    });
 
     const vendaAtualizada = await prisma.sale.findUnique({
       where: { id },
@@ -460,8 +451,8 @@ router.get('/:id', async (req, res) => {
       let cozinha = false;
       let bar = false;
       const saleRef = { mesa: vendaAtualizada?.mesa || null, comanda: vendaAtualizada?.nomeComanda || null };
-      const it = Array.isArray(vendaAtualizada?.itens) ? vendaAtualizada.itens.find((i) => Number(i.productId) === prodId) : null;
-      const qty = Number(it?.quantidade || quantidade || 1);
+      const it = Array.isArray(vendaAtualizada?.itens) ? vendaAtualizada.itens.find((i) => Number(i.productId) === prodId && Number(i.quantidade) === Number(quantidade || 1)) : null;
+      const qty = Number(quantidade || 1);
       for (const s of Array.isArray(setores) ? setores : []) {
         const nome = String(s.nome || '').toLowerCase();
         const modo = String(s.modo || '').toLowerCase();
@@ -482,6 +473,17 @@ router.get('/:id', async (req, res) => {
     } catch {}
 
     const payload = mapSaleResponse(normalizeSale(vendaAtualizada));
+    try {
+      const hasSetorVinculo = Array.isArray(setores) ? setores.length > 0 : false;
+      payload.validacaoSetor = {
+        productId: Number(prodId),
+        vinculado: !!hasSetorVinculo,
+        setores: (Array.isArray(setores) ? setores.map((s) => s?.nome).filter(Boolean) : [])
+      };
+      if (!hasSetorVinculo) {
+        payload.warnings = [...(Array.isArray(payload.warnings) ? payload.warnings : []), 'Produto sem vínculo com setor de impressão'];
+      }
+    } catch {}
     res.json(payload);
     try { recordSaleUpdate(vendaAtualizada.id); } catch {}
   } catch (error) {
@@ -571,6 +573,8 @@ router.delete('/:id/item/:produtoId', async (req, res) => {
       return res.status(404).json({ error: 'Item não encontrado na venda' });
     }
 
+    const prevQty = Number(item.quantidade || 0);
+
     await prisma.saleItem.update({
       where: { id: item.id },
       data: { quantidade: qnt, subtotal: qnt * item.precoUnitario },
@@ -588,12 +592,12 @@ router.delete('/:id/item/:produtoId', async (req, res) => {
       const setores = await prisma.$queryRawUnsafe(`SELECT s.id AS id, s.nome AS nome, s.modoEnvio AS modo, s.whatsappDestino AS whatsappDestino, s.printerId AS printerId FROM \`SetorImpressao\` s INNER JOIN \`ProductSetorImpressao\` psi ON psi.setorId = s.id WHERE psi.productId = ${prodId} AND s.ativo = 1`);
       const saleRef = { mesa: vendaAtualizada?.mesa || null, comanda: vendaAtualizada?.nomeComanda || null };
       const it = Array.isArray(vendaAtualizada?.itens) ? vendaAtualizada.itens.find((i) => Number(i.productId) === prodId) : null;
-      const prevQty = Number(it?.quantidade || 0);
-      if (qnt > prevQty) {
+      const delta = qnt - prevQty;
+      if (delta > 0) {
         for (const s of Array.isArray(setores) ? setores : []) {
           const modo = String(s.modo || '').toLowerCase();
           if (modo === 'impressora' && s.printerId) {
-            const content = buildPrintContent({ setorNome: s.nome, saleRef, productNome: it?.product?.nome || '', quantidade: qnt, observacao: it?.observacao || '' });
+            const content = buildPrintContent({ setorNome: s.nome, saleRef, productNome: it?.product?.nome || '', quantidade: delta, observacao: it?.observacao || '' });
             enqueuePrintJob({ saleId: id, productId: prodId, setorId: Number(s.id), printerId: Number(s.printerId), content }).catch(() => {});
           }
           if (modo === 'whatsapp' && s.whatsappDestino) {

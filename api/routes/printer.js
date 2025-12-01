@@ -7,7 +7,7 @@ router.get('/list', async (req, res) => {
   try {
     const prisma = getActivePrisma();
     const rows = await prisma.$queryRawUnsafe('SELECT id, nome, modelo, address, driver, ativo, dataInclusao FROM `Printer` WHERE `ativo` = true ORDER BY `nome` ASC');
-    res.json(rows);
+    res.json({ success: true, data: rows });
   } catch (error) {
     res.status(500).json({ error: 'Erro ao buscar impressoras' });
   }

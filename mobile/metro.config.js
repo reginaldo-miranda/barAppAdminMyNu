@@ -122,6 +122,18 @@ async function ensureApiRunning() {
           child.unref();
         } catch (e) {
           console.warn('⚠️ Falha ao iniciar API automaticamente:', e?.message || e);
+          try {
+            const apiDir = path.resolve(__dirname, '..', 'api');
+            const node = spawn('node', ['server.js'], {
+              cwd: apiDir,
+              detached: true,
+              stdio: 'ignore',
+              env: { ...process.env, DB_TARGET: preferredTarget },
+            });
+            node.unref();
+          } catch (e2) {
+            console.warn('⚠️ Fallback direto também falhou:', e2?.message || e2);
+          }
         }
       } else {
         console.log('✅ API já está saudável em LAN.');

@@ -214,8 +214,11 @@ export default function CadastroProduto() {
   const loadSetores = async () => {
     setLoadingSetores(true);
     try {
-      const data = await setorImpressaoService.getAll();
-      setSetores((data || []).map((s: any) => ({ id: String(s.id ?? s._id), nome: s.nome, modoEnvio: String(s.modoEnvio || 'impressora') as any })));
+      const body = await setorImpressaoService.getAll();
+      const list = Array.isArray(body)
+        ? body
+        : (Array.isArray((body as any)?.data) ? (body as any).data : []);
+      setSetores(list.map((s: any) => ({ id: String(s.id ?? s._id), nome: s.nome, modoEnvio: String(s.modoEnvio || 'impressora') as any })));
     } catch (error) {
       console.error('Erro ao carregar setores:', error);
       Alert.alert('Erro', 'Não foi possível carregar os setores de impressão');

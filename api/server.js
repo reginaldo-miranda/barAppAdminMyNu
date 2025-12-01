@@ -4,7 +4,12 @@
 import cors from "cors";
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: ['http://localhost:8081', 'http://192.168.0.176:8081', 'http://localhost:4000', 'http://192.168.0.176:4000'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
 app.use(express.json());
 
 // Rota raiz
@@ -41,6 +46,8 @@ import unidadeMedidaRoutes from "./routes/unidadeMedida.js";
 import categoriaRoutes from "./routes/categoria.js";
 import caixaRoutes from "./routes/caixa.js";
 import setorImpressaoRoutes from "./routes/setorImpressao.js";
+import setorImpressaoQueueRoutes from "./routes/setorImpressaoQueue.js";
+import setoresRoutes from "./routes/setores.js";
 import printerRoutes from "./routes/printer.js";
 
 dotenv.config();
@@ -50,6 +57,11 @@ app.use(cors());
 app.use(express.json());
 
 // Rota de saúde pública para teste de conexão
+// Endpoint para controle de API (usado pelo mobile)
+app.get('/dev/start-api', (req, res) => {
+  res.json({ ok: true, message: 'API já está rodando' });
+});
+
 app.get('/api/health', (req, res) => {
   // Determina alvo do banco (local vs railway) com base nas variáveis atuais
   const dbTarget = process.env.DB_TARGET || (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('localhost') ? 'local' : 'railway');
@@ -76,52 +88,34 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true, status: 'healthy', timestamp: Date.now(), dbTarget, db });
 });
 
+// DESABILITADO - Sempre usar base local
 // Novo endpoint: alternar alvo do banco (local/railway) dinamicamente
 import prisma, { switchDbTarget, getProductsForTarget, getSchemaSummaryForTarget } from "./lib/prisma.js";
 import { getSaleUpdates, onSaleUpdate } from "./lib/events.js";
 app.post('/api/admin/db-target', async (req, res) => {
   try {
-    const raw = (req.body?.target || '').toString().toLowerCase();
-    const target = raw === 'local' ? 'local' : raw === 'railway' ? 'railway' : '';
-    if (!target) {
-      return res.status(400).json({ ok: false, message: 'Alvo inválido. Use "local" ou "railway".' });
+    const { target } = req.body || {};
+    const next = String(target || '').toLowerCase() === 'railway' ? 'railway' : 'local';
+    const result = await switchDbTarget(next);
+    if (!result.ok) {
+      return res.status(500).json({ ok: false, message: 'Falha ao alternar DB_TARGET' });
     }
-    const result = await switchDbTarget(target);
-
-    // Monta informações do banco para resposta
-    const getDbInfo = () => {
-      try {
-        const urlStr = process.env.DATABASE_URL || '';
-        const u = new URL(urlStr);
-        const provider = (u.protocol || '').replace(':', '') || 'unknown';
-        const host = u.hostname || '';
-        const port = u.port || '';
-        const database = (u.pathname || '').replace(/^\//, '') || '';
-        const info = { provider, host };
-        if (port) info.port = port;
-        if (database) info.database = database;
-        return info;
-      } catch {
-        return { provider: 'unknown' };
-      }
-    };
-
-    return res.json({ ok: true, message: 'Base alternada com sucesso.', dbTarget: result.target, db: getDbInfo() });
+    return res.json({ ok: true, target: result.target });
   } catch (err) {
     console.error('Erro ao alternar DB_TARGET:', err);
-    return res.status(500).json({ ok: false, message: 'Erro ao alternar base.' });
+    return res.status(500).json({ ok: false, message: 'Erro interno' });
   }
 });
 
 app.get('/api/admin/compare/products', async (req, res) => {
   try {
+    // USAR APENAS BASE LOCAL
     const local = await getProductsForTarget('local');
-    const railway = await getProductsForTarget('railway');
     const pick = (arr) => arr.map((p) => p.nome).slice(0, 10);
     res.json({
       ok: true,
       local: { count: local.length, sample: pick(local) },
-      railway: { count: railway.length, sample: pick(railway) }
+      railway: { count: 0, sample: [] } // Base railway desabilitada
     });
   } catch (e) {
     res.status(500).json({ ok: false });
@@ -130,19 +124,11 @@ app.get('/api/admin/compare/products', async (req, res) => {
 
 app.get('/api/admin/schema/diff', async (req, res) => {
   try {
+    // USAR APENAS BASE LOCAL - Railway desabilitada
     const local = await getSchemaSummaryForTarget('local');
-    const railway = await getSchemaSummaryForTarget('railway');
-    const diff = {};
-    const allTables = Array.from(new Set([...Object.keys(local), ...Object.keys(railway)]));
-    for (const table of allTables) {
-      const lc = (local[table] || []).map(c => c.field);
-      const rw = (railway[table] || []).map(c => c.field);
-      const missingInRailway = lc.filter(f => !rw.includes(f));
-      const extraInRailway = rw.filter(f => !lc.includes(f));
-      diff[table] = { missingInRailway, extraInRailway };
-    }
-    res.json({ ok: true, diff, local, railway });
+    res.json({ ok: true, diff: {} }); // Sem diferenças, apenas local
   } catch (e) {
+    console.error(e);
     res.status(500).json({ ok: false });
   }
 });
@@ -189,7 +175,7 @@ const authenticate = (req, res, next) => {
   }
   const token = authHeader.substring(7);
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || "thunder");
     req.user = decoded;
     return next();
   } catch (err) {
@@ -211,6 +197,8 @@ app.use("/api/unidade-medida", authenticate, unidadeMedidaRoutes);
 app.use("/api/categoria", authenticate, categoriaRoutes);
 app.use("/api/caixa", authenticate, caixaRoutes);
 app.use("/api/setor-impressao", authenticate, setorImpressaoRoutes);
+app.use("/api/setor-impressao-queue", authenticate, setorImpressaoQueueRoutes);
+app.use("/api/setores", authenticate, setoresRoutes);
 app.use("/api/printer", authenticate, printerRoutes);
 
 const PORT = process.env.PORT || 4000;

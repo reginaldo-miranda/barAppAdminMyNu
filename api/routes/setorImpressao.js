@@ -25,9 +25,9 @@ router.get('/list', async (req, res) => {
         ? 'SELECT id, nome, descricao, modoEnvio, whatsappDestino, printerId, ativo, dataInclusao FROM `SetorImpressao` WHERE `ativo` = true ORDER BY `nome` ASC'
         : 'SELECT id, nome, descricao, modoEnvio, whatsappDestino, ativo, dataInclusao FROM `SetorImpressao` WHERE `ativo` = true ORDER BY `nome` ASC';
       const rows = await prisma.$queryRawUnsafe(sql);
-      res.json(rows);
+      res.json({ success: true, data: rows });
     } catch (_e) {
-      res.json([]);
+      res.json({ success: true, data: [] });
     }
   } catch (error) {
     res.status(500).json({ error: 'Erro ao buscar setores de impressão' });
@@ -63,7 +63,25 @@ router.post('/select', async (req, res) => {
     if (!ok) {
       return res.status(404).json({ error: 'Setor não encontrado' });
     }
-    await prisma.$executeRawUnsafe(`INSERT INTO \`AppSetting\` (\`key\`, \`value\`, \`updatedAt\`) VALUES ('defaultSetorImpressaoId', '${sid}', NOW()) ON DUPLICATE KEY UPDATE \`value\`='${sid}', \`updatedAt\`=NOW()`);
+    try {
+      await prisma.$executeRawUnsafe(
+        "CREATE TABLE IF NOT EXISTS `AppSetting` (\n          `key` VARCHAR(191) NOT NULL,\n          `value` VARCHAR(191) NULL,\n          `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),\n          PRIMARY KEY (`key`)\n        ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+      );
+    } catch {}
+    try {
+      await prisma.$executeRawUnsafe(`INSERT INTO \`AppSetting\` (\`key\`, \`value\`, \`updatedAt\`) VALUES ('defaultSetorImpressaoId', '${sid}', NOW()) ON DUPLICATE KEY UPDATE \`value\`='${sid}', \`updatedAt\`=NOW()`);
+    } catch (e1) {
+      try {
+        await prisma.$executeRawUnsafe(`REPLACE INTO \`AppSetting\` (\`key\`, \`value\`, \`updatedAt\`) VALUES ('defaultSetorImpressaoId', '${sid}', NOW())`);
+      } catch (e2) {
+        const rows = await prisma.$queryRawUnsafe("SELECT `value` FROM `AppSetting` WHERE `key` = 'defaultSetorImpressaoId' LIMIT 1");
+        if (Array.isArray(rows) && rows.length > 0) {
+          await prisma.$executeRawUnsafe(`UPDATE \`AppSetting\` SET \`value\`='${sid}', \`updatedAt\`=NOW() WHERE \`key\`='defaultSetorImpressaoId'`);
+        } else {
+          await prisma.$executeRawUnsafe(`INSERT INTO \`AppSetting\` (\`key\`, \`value\`, \`updatedAt\`) VALUES ('defaultSetorImpressaoId', '${sid}', NOW())`);
+        }
+      }
+    }
     return res.json({ ok: true, message: 'Setor de impressão gravado com sucesso!', setorId: sid });
   } catch (error) {
     res.status(500).json({ error: 'Falha ao gravar setor de impressão' });

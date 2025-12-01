@@ -43,8 +43,11 @@ export default function ListagemSetoresScreen() {
     try {
       setLoading(true);
       const resp = await setorImpressaoService.list();
-      const data = Array.isArray(resp?.data) ? resp.data : [];
-      setSetores(data);
+      const body = resp?.data;
+      const items = Array.isArray(body)
+        ? body
+        : (Array.isArray(body?.data) ? body.data : []);
+      setSetores(items);
     } catch (error) {
       Alert.alert('Erro', 'Erro ao carregar setores. Verifique sua conexão e tente novamente.');
       setSetores([]);

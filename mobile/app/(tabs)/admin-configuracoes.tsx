@@ -14,6 +14,7 @@ import { SafeIcon } from '../../components/SafeIcon';
 import { employeeService, userService } from '../../src/services/api';
 import { useAuth } from '../../src/contexts/AuthContext';
 import ScreenIdentifier from '../../src/components/ScreenIdentifier';
+import { useNavigation } from '@react-navigation/native';
 
 interface Employee {
   _id: string;
@@ -45,6 +46,7 @@ export default function AdminConfiguracoesScreen() {
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserPermissions | null>(null);
+  const navigation = useNavigation();
 
   useEffect(() => {
     if (!isAdmin()) {
@@ -293,6 +295,22 @@ export default function AdminConfiguracoesScreen() {
                   <Text style={styles.settingTitle}>Segurança</Text>
                   <Text style={styles.settingDescription}>
                     Configurações de segurança
+                  </Text>
+                </View>
+              </View>
+              <SafeIcon name="chevron-forward" size={20} color="#ccc" fallbackText="›" />
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.settingItem}
+              onPress={() => navigation.navigate('TestScreen' as never)}
+            >
+              <View style={styles.settingContent}>
+                <SafeIcon name="flask" size={24} color="#9C27B0" fallbackText="🧪" />
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingTitle}>Testes e Diagnóstico</Text>
+                  <Text style={styles.settingDescription}>
+                    Executar testes e verificar logs do sistema
                   </Text>
                 </View>
               </View>

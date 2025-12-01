@@ -25,6 +25,7 @@ const getEnvBaseUrl = () => {
 // Helper para detectar URLs locais inválidas em dispositivos
 function isLocalUrl(url) {
   try {
+    if (!url) return false;
     const u = new URL(String(url));
     return LOCAL_HOSTNAMES.has(u.hostname);
   } catch {
@@ -36,16 +37,50 @@ function isLocalUrl(url) {
 function resolveApiBaseUrl() {
   const DEFAULT_PORT = 4000;
 
-  // Prioridade absoluta para variável de ambiente, se existir
   const ENV_URL = getEnvBaseUrl();
   if (ENV_URL) return ENV_URL;
 
-  // Ambiente Web
+  // Ambiente Web: se host for local, tentar extrair IP da LAN do Metro/DevClient
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
     const hostname = window.location.hostname || '';
     if (hostname && !LOCAL_HOSTNAMES.has(hostname)) {
       return `http://${hostname}:${DEFAULT_PORT}/api`;
     }
+    const candidates = [];
+    try {
+      const scriptUrl = NativeModules?.SourceCode?.scriptURL;
+      if (scriptUrl) {
+        const u = new URL(String(scriptUrl));
+        if (u.hostname && !LOCAL_HOSTNAMES.has(u.hostname)) candidates.push(u.hostname);
+      }
+    } catch {}
+    try {
+      const devHost = Constants?.expoGo?.developer?.host;
+      if (devHost) {
+        const h = String(devHost).split(':')[0];
+        if (h && !LOCAL_HOSTNAMES.has(h)) candidates.push(h);
+      }
+    } catch {}
+    try {
+      const hostUri = Constants?.expoConfig?.hostUri;
+      if (hostUri) {
+        const h = String(hostUri).split(':')[0];
+        if (h && !LOCAL_HOSTNAMES.has(h)) candidates.push(h);
+      }
+    } catch {}
+    try {
+      const dbgHost = Constants?.manifest?.debuggerHost;
+      if (dbgHost) {
+        const h = String(dbgHost).split(':')[0];
+        if (h && !LOCAL_HOSTNAMES.has(h)) candidates.push(h);
+      }
+    } catch {}
+    try {
+      const envPackagerHost = (typeof process !== 'undefined' ? process.env?.REACT_NATIVE_PACKAGER_HOSTNAME : '') || '';
+      if (envPackagerHost && !LOCAL_HOSTNAMES.has(envPackagerHost)) candidates.push(envPackagerHost);
+    } catch {}
+    const picked = candidates.find((h) => h && !LOCAL_HOSTNAMES.has(h));
+    if (picked) return `http://${picked}:${DEFAULT_PORT}/api`;
     return '';
   }
 
@@ -53,7 +88,6 @@ function resolveApiBaseUrl() {
   const expoHost = Constants?.expoGo?.developer?.host;
   const manifestHost = Constants?.manifest?.debuggerHost;
   const configHostUri = Constants?.expoConfig?.hostUri;
-  // Adicionar host do bundle JS (React Native) como fallback confiável
   let bundleHost = '';
   try {
     const scriptUrl = NativeModules?.SourceCode?.scriptURL;
@@ -64,7 +98,6 @@ function resolveApiBaseUrl() {
   } catch {}
 
   const hostCandidates = [bundleHost, expoHost, manifestHost, configHostUri].filter(Boolean);
-
   for (const h of hostCandidates) {
     const hostPart = String(h).split(':')[0];
     if (hostPart && !LOCAL_HOSTNAMES.has(hostPart)) {
@@ -72,18 +105,16 @@ function resolveApiBaseUrl() {
     }
   }
 
-  // Fallback final: manter vazio para evitar localhost/127.0.0.1
   try {
     const envPackagerHost = (typeof process !== 'undefined' ? process.env?.REACT_NATIVE_PACKAGER_HOSTNAME : '') || '';
     if (envPackagerHost && !LOCAL_HOSTNAMES.has(envPackagerHost)) {
       return `http://${envPackagerHost}:${DEFAULT_PORT}/api`;
     }
   } catch {}
-  // Fallback final para ambiente nativo
+
   if (Platform.OS === 'android') {
     return `http://10.0.2.2:${DEFAULT_PORT}/api`;
   }
-  // Nunca retornar localhost em ambiente nativo; manter vazio para exigir detecção correta
   return '';
 }
 
@@ -92,6 +123,12 @@ const ENV_BASE_URL = getEnvBaseUrl();
 
 // Segundo: override salvo em storage
 let initialBaseUrl = ENV_BASE_URL || resolveApiBaseUrl();
+
+// FORÇAR IP LOCAL PARA TESTES - base local MySQL
+if (!initialBaseUrl || initialBaseUrl.includes('localhost') || initialBaseUrl.includes('127.0.0.1')) {
+  initialBaseUrl = 'http://192.168.0.176:4000/api';
+}
+
 const DEFAULT_TIMEOUT_MS = 15000;
 
 const api = axios.create({
@@ -135,17 +172,19 @@ function endCancelableOp(key) {
 api.interceptors.request.use(
   async (config) => {
     try {
-      // Override de baseURL via AsyncStorage (opcional)
-      const storedBaseUrl = await AsyncStorage.getItem(STORAGE_KEYS.API_BASE_URL);
-      if (storedBaseUrl) {
-        const isLocal = isLocalUrl(storedBaseUrl);
-        if (isLocal && Platform.OS !== 'web') {
-          await AsyncStorage.removeItem(STORAGE_KEYS.API_BASE_URL);
-        } else {
-          config.baseURL = storedBaseUrl;
-        }
-      } else if (ENV_BASE_URL) {
+      // Prioridade: ENV sempre primeiro (garante IP da LAN definido pelo start script)
+      if (ENV_BASE_URL) {
         config.baseURL = ENV_BASE_URL;
+      } else {
+        const storedBaseUrl = await AsyncStorage.getItem(STORAGE_KEYS.API_BASE_URL);
+        if (storedBaseUrl) {
+          const isLocal = isLocalUrl(storedBaseUrl);
+          if (isLocal && Platform.OS !== 'web') {
+            await AsyncStorage.removeItem(STORAGE_KEYS.API_BASE_URL);
+          } else {
+            config.baseURL = storedBaseUrl;
+          }
+        }
       }
 
       if (!config.baseURL) {
@@ -206,27 +245,26 @@ api.interceptors.response.use(
 // Inicialização assíncrona para aplicar override salvo assim que o app inicia
   (async () => {
     try {
-      const storedBaseUrl = await AsyncStorage.getItem(STORAGE_KEYS.API_BASE_URL);
-      if (storedBaseUrl) {
-        const isLocal = isLocalUrl(storedBaseUrl);
-        if (isLocal && Platform.OS !== 'web') {
-          await AsyncStorage.removeItem(STORAGE_KEYS.API_BASE_URL);
-          if (ENV_BASE_URL) {
-            initialBaseUrl = ENV_BASE_URL;
-            api.defaults.baseURL = ENV_BASE_URL;
+      if (ENV_BASE_URL) {
+        initialBaseUrl = ENV_BASE_URL;
+        api.defaults.baseURL = ENV_BASE_URL;
+        try { await AsyncStorage.removeItem(STORAGE_KEYS.API_BASE_URL); } catch {}
+      } else {
+        const storedBaseUrl = await AsyncStorage.getItem(STORAGE_KEYS.API_BASE_URL);
+        if (storedBaseUrl) {
+          const isLocal = isLocalUrl(storedBaseUrl);
+          if (isLocal && Platform.OS !== 'web') {
+            await AsyncStorage.removeItem(STORAGE_KEYS.API_BASE_URL);
+          } else {
+            initialBaseUrl = storedBaseUrl;
+            api.defaults.baseURL = storedBaseUrl;
           }
         } else {
-          initialBaseUrl = storedBaseUrl;
-          api.defaults.baseURL = storedBaseUrl;
-        }
-    } else if (ENV_BASE_URL) {
-      initialBaseUrl = ENV_BASE_URL;
-      api.defaults.baseURL = ENV_BASE_URL;
-    } else {
       const next = resolveApiBaseUrl();
       initialBaseUrl = next;
       api.defaults.baseURL = next;
-    }
+        }
+      }
 
     // Aplicar timeout salvo, se existir
     const savedTimeoutStr = await AsyncStorage.getItem(STORAGE_KEYS.API_TIMEOUT_MS);
@@ -323,6 +361,45 @@ export async function switchServerDbTarget(baseUrl, target) {
 }
 
 export const API_URL = getCurrentBaseUrl();
+
+// Criar objeto apiService para compatibilidade com tablets
+export const apiService = {
+  request: async (config) => {
+    try {
+      const response = await api(config);
+      return { data: response.data, status: response.status, success: true };
+    } catch (error) {
+      console.error('API Service Error:', error);
+      return { 
+        data: null, 
+        status: error.response?.status || 500, 
+        success: false, 
+        error: error.message 
+      };
+    }
+  },
+  getBaseURL: () => {
+    try {
+      return getCurrentBaseUrl();
+    } catch {
+      return api.defaults.baseURL || '';
+    }
+  },
+  getWsUrl: () => {
+    try {
+      return getWsUrl();
+    } catch {
+      const base = getCurrentBaseUrl();
+      try {
+        const u = new URL(String(base));
+        return `ws://${u.hostname}:${(process.env?.WS_PORT && Number(process.env.WS_PORT)) || 4001}`;
+      } catch {
+        return '';
+      }
+    }
+  }
+};
+
 export default api;
 
 // Serviços específicos (restaurados)
@@ -401,8 +478,43 @@ export const setorImpressaoService = {
   create: (data) => api.post('/setor-impressao/create', data),
   update: (id, data) => api.put(`/setor-impressao/update/${id}`, data),
   delete: (id) => api.delete(`/setor-impressao/delete/${id}`),
-  getSelected: () => api.get('/setor-impressao/selected'),
-  select: (id) => api.post('/setor-impressao/select', { setorId: id }),
+  getSelected: async () => {
+    try {
+      const resp = await api.get('/setor-impressao/selected');
+      const srvId = resp?.data?.setorId;
+      if (srvId && Number(srvId) > 0) {
+        return resp;
+      }
+      try {
+        const localId = await AsyncStorage.getItem('SELECTED_SETOR_ID');
+        const sid = localId ? Number(localId) : null;
+        return { data: { setorId: sid } };
+      } catch {
+        return resp;
+      }
+    } catch (error) {
+      try {
+        const localId = await AsyncStorage.getItem('SELECTED_SETOR_ID');
+        const sid = localId ? Number(localId) : null;
+        return { data: { setorId: sid } };
+      } catch {
+        throw error;
+      }
+    }
+  },
+  select: async (id) => {
+    try {
+      const resp = await api.post('/setor-impressao/select', { setorId: id });
+      return resp;
+    } catch (error) {
+      try {
+        await AsyncStorage.setItem('SELECTED_SETOR_ID', String(id));
+        return { data: { ok: true, message: 'Setor gravado localmente' } };
+      } catch (e2) {
+        throw error;
+      }
+    }
+  },
 };
 
 export const printerService = {
@@ -486,6 +598,13 @@ export const userService = {
   delete: (id) => api.delete(`/user/${id}`),
 };
 
+// Função simples para configurar IP manual (para testes)
+export function setManualBaseUrl(ip, port = 3000) {
+  const url = `http://${ip}:${port}/api`;
+  api.defaults.baseURL = url;
+  return url;
+}
+
 export function getCurrentBaseUrl() {
   try {
     const current = api.defaults.baseURL || ENV_BASE_URL || resolveApiBaseUrl() || '';
@@ -552,33 +671,33 @@ export function getDevControlUrlFromBase(baseUrl) {
     try {
       const u = new URL(base);
       const h = u.hostname;
-      if (!isBad(h)) return `http://${h}:4005`;
+      if (!isBad(h)) return `http://${h}:4000`;
     } catch {}
     const scriptUrl = NativeModules?.SourceCode?.scriptURL;
     if (scriptUrl) {
       try {
         const parsed = new URL(String(scriptUrl));
         const h = parsed.hostname;
-        if (!isBad(h)) return `http://${h}:4005`;
+        if (!isBad(h)) return `http://${h}:4000`;
       } catch {}
     }
     const devHost = Constants?.expoGo?.developer?.host;
     if (devHost) {
       const h = String(devHost).split(':')[0];
-      if (!isBad(h)) return `http://${h}:4005`;
+      if (!isBad(h)) return `http://${h}:4000`;
     }
     const hostUri = Constants?.expoConfig?.hostUri;
     if (hostUri) {
       const h = String(hostUri).split(':')[0];
-      if (!isBad(h)) return `http://${h}:4005`;
+      if (!isBad(h)) return `http://${h}:4000`;
     }
     const dbgHost = Constants?.manifest?.debuggerHost;
     if (dbgHost) {
       const h = String(dbgHost).split(':')[0];
-      if (!isBad(h)) return `http://${h}:4005`;
+      if (!isBad(h)) return `http://${h}:4000`;
     }
     const envPackagerHost = (typeof process !== 'undefined' ? process.env?.REACT_NATIVE_PACKAGER_HOSTNAME : '') || '';
-    if (!isBad(envPackagerHost)) return `http://${envPackagerHost}:4005`;
+    if (!isBad(envPackagerHost)) return `http://${envPackagerHost}:4000`;
     return '';
   } catch {
     return '';
@@ -596,4 +715,9 @@ export async function startLocalApi(target, baseUrl) {
   } catch {
     return { ok: false };
   }
+}
+
+// Método para obter a URL base atual
+export function getBaseURL() {
+  return api.defaults.baseURL || '';
 }

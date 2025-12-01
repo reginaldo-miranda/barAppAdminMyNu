@@ -148,6 +148,13 @@ export default function HomeScreen() {
       onPress: () => router.push('/(tabs)/comandas'),
     },
     {
+      title: 'Modo Tablet',
+      subtitle: 'Visualização para cozinha e bar',
+      icon: 'tablet-portrait',
+      color: '#E91E63',
+      onPress: () => router.push('/tablet'),
+    },
+    {
       title: 'Histórico de Vendas',
       subtitle: 'Vendas finalizadas',
       icon: 'time',

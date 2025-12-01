@@ -99,6 +99,7 @@ model Employee {
   vendasAbertura          Sale[]  @relation("SaleFuncionarioAbertura")
   caixasAbertura          Caixa[] @relation("CaixaFuncionarioAbertura")
   caixasFechamento        Caixa[] @relation("CaixaFuncionarioFechamento")
+  saleItemsPrepared       SaleItem[] @relation("SaleItemPreparedBy")
 }
 
 model Customer {
@@ -301,6 +302,11 @@ model SaleItem {
   quantidade    Int
   precoUnitario Decimal  @db.Decimal(10, 2)
   subtotal      Decimal  @db.Decimal(10, 2)
+  status        String   @default("pendente") @db.VarChar(20)
+  createdAt     DateTime @default(now())
+  preparedAt    DateTime?
+  preparedById  Int?
+  preparedBy    Employee? @relation("SaleItemPreparedBy", fields: [preparedById], references: [id], onDelete: SetNull)
 }
 
 model Caixa {

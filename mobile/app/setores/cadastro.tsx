@@ -38,7 +38,11 @@ export default function CadastroSetorScreen() {
       setSelectedPrinterId(s.printerId ? String(s.printerId) : '');
     } catch (error) {
       Alert.alert('Erro', 'Não foi possível carregar os dados do setor.');
-      router.back();
+      try {
+        router.replace('/setores/listagem' as any);
+      } catch {
+        // silencioso: evitar warning GO_BACK quando não há histórico
+      }
     } finally { setLoadingRecord(false); }
   };
 
@@ -83,12 +87,27 @@ export default function CadastroSetorScreen() {
     if (formData.modoEnvio === 'whatsapp' && !formData.whatsappDestino.trim()) { Alert.alert('Erro', 'Informe o número/contato do WhatsApp'); return; }
     try {
       setLoading(true);
+      try {
+        const existingResp = await setorImpressaoService.getAll();
+        const list = Array.isArray(existingResp?.data?.data) ? existingResp.data.data : (Array.isArray(existingResp?.data) ? existingResp.data : []);
+        const exists = list.some((it: any) => String(it?.nome || '').trim().toLowerCase() === formData.nome.trim().toLowerCase() && (!isEditing || String(it?.id) !== String(id)));
+        if (!isEditing && exists) {
+          setLoading(false);
+          Alert.alert('Erro', 'Já existe um setor com este nome');
+          return;
+        }
+      } catch {}
       const payload = { nome: formData.nome.trim(), descricao: formData.descricao.trim(), modoEnvio: formData.modoEnvio, whatsappDestino: formData.whatsappDestino.trim(), printerId: selectedPrinterId ? Number(selectedPrinterId) : undefined, ativo: formData.ativo };
       if (isEditing && id) {
         await setorImpressaoService.update(id as string, payload);
         setSaveSuccess(true);
         Alert.alert('Sucesso', 'Setor atualizado com sucesso!');
-        setTimeout(() => { setSaveSuccess(false); router.back(); }, 3000);
+        setTimeout(() => {
+          setSaveSuccess(false);
+          try {
+            router.replace('/setores/listagem' as any);
+          } catch {}
+        }, 800);
       } else {
         await setorImpressaoService.create(payload);
         setSaveSuccess(true);
@@ -98,7 +117,12 @@ export default function CadastroSetorScreen() {
         setSelectedPrinterId('');
       }
     } catch (error) {
-      Alert.alert('Erro', 'Erro ao salvar setor. Verifique sua conexão e tente novamente.');
+      try {
+        const msg = (error as any)?.response?.data?.error || (error as any)?.message || 'Erro ao salvar setor. Verifique sua conexão e tente novamente.';
+        Alert.alert('Erro', msg);
+      } catch {
+        Alert.alert('Erro', 'Erro ao salvar setor. Verifique sua conexão e tente novamente.');
+      }
     } finally { setLoading(false); }
   };
 
