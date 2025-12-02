@@ -424,18 +424,31 @@ router.get('/:id', async (req, res) => {
       return res.status(400).json({ error: 'Produto inativo' });
     }
 
-    await prisma.saleItem.create({
-      data: {
-        saleId: venda.id,
-        productId: prodId,
-        nomeProduto: produto.nome,
-        quantidade: Number(quantidade || 1),
-        precoUnitario: produto.precoVenda,
-        subtotal: Number(quantidade || 1) * produto.precoVenda,
-        status: 'pendente',
-        createdAt: new Date()
-      },
-    });
+    const itemExistente = Array.isArray(venda.itens) ? venda.itens.find((i) => Number(i.productId) === prodId) : null;
+    if (itemExistente) {
+      const novaQtd = Number(itemExistente.quantidade || 0) + Number(quantidade || 1);
+      await prisma.saleItem.update({
+        where: { id: itemExistente.id },
+        data: {
+          quantidade: novaQtd,
+          subtotal: novaQtd * (itemExistente.precoUnitario ?? produto.precoVenda),
+          status: 'pendente'
+        }
+      });
+    } else {
+      await prisma.saleItem.create({
+        data: {
+          saleId: venda.id,
+          productId: prodId,
+          nomeProduto: produto.nome,
+          quantidade: Number(quantidade || 1),
+          precoUnitario: produto.precoVenda,
+          subtotal: Number(quantidade || 1) * produto.precoVenda,
+          status: 'pendente',
+          createdAt: new Date()
+        },
+      });
+    }
 
     const vendaAtualizada = await prisma.sale.findUnique({
       where: { id },
@@ -582,18 +595,9 @@ router.delete('/:id/item/:produtoId', async (req, res) => {
         data: { quantidade: qnt, subtotal: qnt * item.precoUnitario },
       });
     } else {
-      // Não altera o item original (mantém status/checkbox). Cria uma nova linha com o delta como "pendente".
-      await prisma.saleItem.create({
-        data: {
-          saleId: venda.id,
-          productId: item.productId,
-          nomeProduto: item.nomeProduto,
-          quantidade: delta,
-          precoUnitario: item.precoUnitario,
-          subtotal: delta * item.precoUnitario,
-          status: 'pendente',
-          createdAt: new Date(),
-        },
+      await prisma.saleItem.update({
+        where: { id: item.id },
+        data: { quantidade: qnt, subtotal: qnt * item.precoUnitario, status: 'pendente' },
       });
     }
 

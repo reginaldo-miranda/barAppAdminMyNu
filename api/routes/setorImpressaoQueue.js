@@ -1,9 +1,9 @@
 import express from 'express';
-import { PrismaClient } from '@prisma/client';
+import { getActivePrisma } from '../lib/prisma.js';
 import { recordSaleUpdate } from '../lib/events.js';
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const prisma = getActivePrisma();
 
 /**
  * GET /api/setor-impressao/:id/queue
@@ -139,35 +139,49 @@ router.patch('/sale/:saleId/item/:itemId/status', async (req, res) => {
       });
     }
 
+    if (existingItem.sale && existingItem.sale.status && existingItem.sale.status !== 'aberta') {
+      return res.status(400).json({
+        success: false,
+        message: 'Venda não está aberta para atualização de status'
+      });
+    }
+
     // Atualizar o status do item
-    const updatedItem = await prisma.saleItem.update({
-      where: {
-        id: parseInt(itemId)
-      },
-      data: {
-        status: status,
-        preparedAt: status === 'pronto' && !existingItem.preparedAt ? new Date() : existingItem.preparedAt,
-        preparedById: status === 'pronto' ? (preparedById ?? existingItem.preparedById) : existingItem.preparedById
-      },
-      include: {
-        sale: {
-          include: {
-            mesa: {
-              select: {
-                numero: true,
-                nome: true
-              }
-            }
-          }
-        },
-        product: true,
-        preparedBy: {
-          select: {
-            nome: true
-          }
+    let updatedItem = null;
+    if (status === 'entregue') {
+      const affected = await prisma.$executeRawUnsafe(`UPDATE \`SaleItem\` SET status = 'entregue' WHERE id = ${parseInt(itemId)} AND saleId = ${parseInt(saleId)} LIMIT 1`);
+      if (!affected) {
+        return res.status(404).json({ success: false, message: 'Item não encontrado para entregar' });
+      }
+      updatedItem = await prisma.saleItem.findUnique({
+        where: { id: parseInt(itemId) },
+        include: {
+          sale: { include: { mesa: { select: { numero: true, nome: true } } } },
+          product: true,
+          preparedBy: { select: { nome: true } }
+        }
+      });
+    } else {
+      if (status === 'pronto') {
+        const affected = await prisma.$executeRawUnsafe(`UPDATE \`SaleItem\` SET status = 'pronto', preparedAt = IFNULL(preparedAt, NOW()) WHERE id = ${parseInt(itemId)} AND saleId = ${parseInt(saleId)} LIMIT 1`);
+        if (!affected) {
+          return res.status(404).json({ success: false, message: 'Item não encontrado para marcar como pronto' });
+        }
+      } else if (status === 'pendente') {
+        const affected = await prisma.$executeRawUnsafe(`UPDATE \`SaleItem\` SET status = 'pendente' WHERE id = ${parseInt(itemId)} AND saleId = ${parseInt(saleId)} LIMIT 1`);
+        if (!affected) {
+          return res.status(404).json({ success: false, message: 'Item não encontrado para marcar como pendente' });
         }
       }
-    });
+      updatedItem = await prisma.saleItem.findUnique({
+        where: { id: parseInt(itemId) },
+        include: {
+          sale: { include: { mesa: { select: { numero: true, nome: true } } } },
+          product: true,
+          preparedBy: { select: { nome: true } }
+        }
+      });
+    }
 
     // Registrar atualização para sincronização em tempo real
     await recordSaleUpdate(updatedItem.saleId, 'item_updated', {
@@ -177,18 +191,21 @@ router.patch('/sale/:saleId/item/:itemId/status', async (req, res) => {
       preparedBy: updatedItem.preparedBy?.nome
     });
 
-    res.json({
-      success: true,
-      message: status === 'pronto' ? 'Item marcado como pronto' : status === 'entregue' ? 'Item marcado como entregue' : 'Item marcado como pendente',
-      data: updatedItem
-    });
+    res.json({ success: true, message: status === 'pronto' ? 'Item marcado como pronto' : status === 'entregue' ? 'Item marcado como entregue' : 'Item marcado como pendente', data: updatedItem });
 
   } catch (error) {
-    console.error('Erro ao atualizar status do item:', error);
+    const code = error?.code;
+    console.error('Erro ao atualizar status do item:', code || '', error?.message || error);
+    if (code === 'P2025') {
+      return res.status(404).json({ success: false, message: 'Item não encontrado para atualizar', error: String(error?.message || error) });
+    }
+    if (code === 'P2003') {
+      return res.status(400).json({ success: false, message: 'Violação de chave estrangeira ao atualizar item', error: String(error?.message || error) });
+    }
     res.status(500).json({
       success: false,
       message: 'Erro ao atualizar status do item',
-      error: error.message
+      error: String(error?.message || error)
     });
   }
 });

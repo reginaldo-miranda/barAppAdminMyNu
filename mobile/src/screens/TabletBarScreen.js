@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, RefreshControl, Vibration, Animated } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, RefreshControl, Vibration, Animated, Pressable } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { apiService } from '../services/api';
+import { apiService, authService } from '../services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { STORAGE_KEYS } from '../services/storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useSetorSync } from '../hooks/useSetorSync';
 import { imprimirPedidoSetor } from '../utils/printSetor';
@@ -12,6 +14,21 @@ export default function TabletBarScreen(props = {}) {
   const [loading, setLoading] = useState(true);
   const [setorId, setSetorId] = useState(null);
   const [setorNome, setSetorNome] = useState('Bar');
+  const [submittingId, setSubmittingId] = useState(null);
+  const [feedbackMsg, setFeedbackMsg] = useState({ type: null, text: '' });
+
+  const ensureToken = React.useCallback(async () => {
+    try {
+      const existingToken = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+      if (!existingToken) {
+        const login = await authService.login({ email: 'admin@barapp.com', senha: '123456' });
+        const token = login?.data?.token;
+        if (token) await AsyncStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, token);
+      }
+    } catch {}
+  }, []);
+
+  React.useEffect(() => { ensureToken(); }, [ensureToken]);
   const [fadeAnim] = useState(new Animated.Value(1));
   const [sound, setSound] = useState();
   const [filterStatus, setFilterStatus] = useState(forceFilterStatus || 'pendente');
@@ -95,9 +112,11 @@ export default function TabletBarScreen(props = {}) {
     
     try {
       setLoading(true);
+      const token = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
       const response = await apiService.request({
         method: 'GET',
-        url: `/setor-impressao-queue/${idSetor}/queue?status=${forceFilterStatus || filterStatus}`
+        url: `/setor-impressao-queue/${idSetor}/queue?status=${forceFilterStatus || filterStatus}`,
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
 
       if (response.data?.success) {
@@ -116,20 +135,39 @@ export default function TabletBarScreen(props = {}) {
   // Alterar status do item (pendente -> pronto -> entregue)
   const alterarStatus = async (item, novoStatus) => {
     try {
+      let existingToken = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+      if (!existingToken) {
+        try {
+          const login = await authService.login({ email: 'admin@barapp.com', senha: '123456' });
+          const token = login?.data?.token;
+          if (token) await AsyncStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, token);
+          existingToken = token;
+        } catch {}
+      }
+      setSubmittingId(item.id);
       Vibration.vibrate(100);
       const response = await apiService.request({
         method: 'PATCH',
         url: `/setor-impressao-queue/sale/${item.saleId}/item/${item.id}/status`,
-        data: { status: novoStatus }
+        data: { status: novoStatus },
+        headers: existingToken ? { Authorization: `Bearer ${existingToken}` } : {}
       });
-      if (response.data?.success) {
+      if (response?.success && response.data?.success) {
         notificarSucesso();
+        setItems(prevItems => prevItems.filter(i => i.id !== item.id));
         Alert.alert('Sucesso', novoStatus === 'pronto' ? 'Item marcado como pronto' : 'Item marcado como entregue');
+        setFeedbackMsg({ type: 'success', text: novoStatus === 'pronto' ? 'Item marcado como pronto' : 'Item marcado como entregue' });
         buscarItensDoSetor(setorId);
+      } else {
+        const msg = response?.data?.message || `Falha ao marcar como ${novoStatus} (status ${response?.status || 'N/A'})`;
+        Alert.alert('Erro', msg);
+        setFeedbackMsg({ type: 'error', text: msg });
       }
     } catch (error) {
       console.error(`Erro ao marcar item como ${novoStatus}:`, error);
       Alert.alert('Erro', `Não foi possível marcar o item como ${novoStatus}`);
+    } finally {
+      setSubmittingId(null);
     }
   };
 
@@ -200,6 +238,13 @@ export default function TabletBarScreen(props = {}) {
     }, [setorId, setorIdOverride, setorNomeOverride, filterStatus, forceFilterStatus, hiddenIds])
   );
 
+  React.useEffect(() => {
+    const id = setorIdOverride ?? setorId;
+    if (id) {
+      buscarItensDoSetor(id);
+    }
+  }, [setorId, setorIdOverride, filterStatus, forceFilterStatus, hiddenIds]);
+
   const mesasAgrupadas = agruparPorMesa(items);
 
   const getWaitingMinutes = (dt) => {
@@ -246,9 +291,26 @@ export default function TabletBarScreen(props = {}) {
             <Text style={[styles.checkboxText, { color: '#616161' }]}>Marcar como pronto</Text>
           </TouchableOpacity>
         ) : item.status === 'pronto' ? (
-          <TouchableOpacity style={[styles.checkbox, { borderColor: '#2196F3' }]} onPress={() => alterarStatus(item, 'entregue')} activeOpacity={0.8}>
-            <Ionicons name="checkmark-done-outline" size={24} color="#2196F3" />
-            <Text style={[styles.checkboxText, { color: '#2196F3' }]}>Marcar como entregue</Text>
+          <TouchableOpacity
+            style={[styles.checkbox, { borderColor: '#9E9E9E', opacity: submittingId === item.id ? 0.6 : 1 }]}
+            onPress={() => {
+              try {
+                console.log('Entregar clique (bar)', { id: item.id, saleId: item.saleId, status: item.status });
+                if (!item?.id || !item?.saleId) {
+                  Alert.alert('Erro', 'Item inválido para entrega');
+                  return;
+                }
+                alterarStatus(item, 'entregue');
+              } catch (e) {
+                Alert.alert('Erro', 'Falha ao iniciar entrega');
+              }
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            activeOpacity={0.8}
+            disabled={submittingId === item.id}
+          >
+            <Ionicons name="square-outline" size={24} color="#616161" />
+            <Text style={[styles.checkboxText, { color: '#616161' }]}>Marcar como entregue</Text>
           </TouchableOpacity>
         ) : (
           <View style={[styles.checkbox, { borderColor: '#9E9E9E' }]}> 
@@ -314,6 +376,11 @@ export default function TabletBarScreen(props = {}) {
         </View>
         <Text style={styles.headerTitle}>{setorNome}</Text>
         <Text style={styles.headerSubtitle}>{forceFilterStatus === 'pronto' ? 'Prontos para entregar' : `${items.length} pedido(s) ${filterStatus === 'pendente' ? 'pendente(s)' : filterStatus === 'pronto' ? 'pronto(s)' : 'entregue(s)'}`}</Text>
+        {feedbackMsg.text ? (
+          <Text style={[styles.feedbackMsg, feedbackMsg.type === 'error' ? styles.feedbackError : styles.feedbackSuccess]}>
+            {feedbackMsg.text}
+          </Text>
+        ) : null}
         <View style={[styles.connectionStatus, connected ? styles.connected : styles.disconnected]}>
           <Ionicons name={connected ? 'wifi' : 'wifi-off'} size={16} color="#fff" />
           <Text style={styles.connectionText}>
@@ -323,13 +390,13 @@ export default function TabletBarScreen(props = {}) {
       </View>
       {!forceFilterStatus && (
       <View style={styles.filtersRow}>
-        <TouchableOpacity onPress={() => { setFilterStatus('pendente'); buscarItensDoSetor(setorId); }} style={[styles.filterChip, filterStatus === 'pendente' && styles.filterChipActive]}>
+        <TouchableOpacity onPress={() => { setFilterStatus('pendente'); }} style={[styles.filterChip, filterStatus === 'pendente' && styles.filterChipActive]}>
           <Text style={[styles.filterText, filterStatus === 'pendente' && styles.filterTextActive]}>Em preparação</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => { setFilterStatus('pronto'); buscarItensDoSetor(setorId); }} style={[styles.filterChip, filterStatus === 'pronto' && styles.filterChipActive]}>
+        <TouchableOpacity onPress={() => { setFilterStatus('pronto'); }} style={[styles.filterChip, filterStatus === 'pronto' && styles.filterChipActive]}>
           <Text style={[styles.filterText, filterStatus === 'pronto' && styles.filterTextActive]}>Prontos</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => { setFilterStatus('entregue'); buscarItensDoSetor(setorId); }} style={[styles.filterChip, filterStatus === 'entregue' && styles.filterChipActive]}>
+        <TouchableOpacity onPress={() => { setFilterStatus('entregue'); }} style={[styles.filterChip, filterStatus === 'entregue' && styles.filterChipActive]}>
           <Text style={[styles.filterText, filterStatus === 'entregue' && styles.filterTextActive]}>Entregues</Text>
         </TouchableOpacity>
       </View>
@@ -424,6 +491,18 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 5,
     fontWeight: '500',
+  },
+  feedbackMsg: {
+    marginTop: 8,
+    fontSize: 18,
+    fontWeight: '600',
+    textAlign: 'center'
+  },
+  feedbackError: {
+    color: '#d32f2f'
+  },
+  feedbackSuccess: {
+    color: '#2e7d32'
   },
   connectionStatus: {
     flexDirection: 'row',

@@ -109,12 +109,20 @@ export default function TabletMode() {
                 <Ionicons name="checkmark" size={20} color="#fff" />
                 <Text style={styles.navActionText}>Entregar</Text>
               </TouchableOpacity>
+              <TouchableOpacity style={[styles.navActionBtn, { marginLeft: 8 }]} onPress={() => setActiveView('entregue')} activeOpacity={0.85}>
+                <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                <Text style={styles.navActionText}>Ver Entregues</Text>
+              </TouchableOpacity>
             </>
           ) : (
             <>
               <TouchableOpacity style={styles.navActionBtn} onPress={limparEntregues} activeOpacity={0.85}>
                 <Ionicons name="trash" size={20} color="#fff" />
                 <Text style={styles.navActionText}>Limpar entregues</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.navActionBtn, { marginLeft: 8 }]} onPress={() => setActiveView('pronto')} activeOpacity={0.85}>
+                <Ionicons name="albums" size={20} color="#fff" />
+                <Text style={styles.navActionText}>Ver Prontos</Text>
               </TouchableOpacity>
             </>
           )}

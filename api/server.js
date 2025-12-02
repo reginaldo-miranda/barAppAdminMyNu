@@ -133,6 +133,19 @@ app.get('/api/admin/schema/diff', async (req, res) => {
   }
 });
 
+// Endpoint para correções rápidas de schema (uso interno em LAN)
+app.post('/api/admin/schema/fix', async (req, res) => {
+  try {
+    await prisma.$executeRawUnsafe(
+      "ALTER TABLE `SaleItem` MODIFY COLUMN `status` VARCHAR(20) NOT NULL DEFAULT 'pendente';"
+    );
+    return res.json({ ok: true, message: 'Schema atualizado: SaleItem.status VARCHAR(20)' });
+  } catch (e) {
+    console.error('Erro corrigindo schema:', e?.message || e);
+    return res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
 app.get('/api/sale/updates', (req, res) => {
   try {
     const since = req.query.since || 0;
@@ -235,6 +248,9 @@ prisma.$connect()
     );
     await prisma.$executeRawUnsafe(
       "CREATE TABLE IF NOT EXISTS `WhatsAppMessageLog` (\n        `id` INTEGER NOT NULL AUTO_INCREMENT,\n        `saleId` INTEGER NULL,\n        `destino` VARCHAR(191) NOT NULL,\n        `content` TEXT NOT NULL,\n        `status` ENUM('queued','sent','failed') NOT NULL DEFAULT 'queued',\n        `error` TEXT NULL,\n        `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),\n        `sentAt` DATETIME(3) NULL,\n        PRIMARY KEY (`id`)\n      ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    );
+    await prisma.$executeRawUnsafe(
+      "ALTER TABLE `SaleItem` MODIFY COLUMN `status` VARCHAR(20) NOT NULL DEFAULT 'pendente';"
     );
   } catch {}
 })();
