@@ -4,16 +4,11 @@
     "strict": true,
     "noEmit": true,
     "moduleResolution": "bundler",
-    "baseUrl": ".",
+    "baseUrl": "./src",
     "paths": {
-      "@/*": [
-        "./*",
-        "./src/*"
-      ]
+      "@/*": ["*"]
     },
-    "types": [
-      "expo-router"
-    ]
+    "types": ["expo-router"]
   },
   "exclude": [
     "node_modules",
