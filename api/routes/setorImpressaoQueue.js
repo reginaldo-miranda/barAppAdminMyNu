@@ -40,7 +40,7 @@ router.get('/:id/queue', async (req, res) => {
           .map((v) => parseInt(v))
           .filter((n) => Number.isInteger(n) && n > 0);
         if (ids.length > 0) {
-          extraFilters.push(`AND si.preparedById IN (${ids.join(',')})`);
+          extraFilters.push(`AND (si.preparedById IN (${ids.join(',')}) OR sa.funcionarioId IN (${ids.join(',')}))`);
         }
       }
     }
@@ -55,6 +55,7 @@ router.get('/:id/queue', async (req, res) => {
         si.createdAt,
         si.preparedAt,
         si.preparedById,
+        sa.funcionarioId as funcionarioId,
         s.numero as mesaNumero,
         s.nome as mesaNome,
         s.nomeResponsavel as mesaResponsavelNome,
@@ -104,10 +105,12 @@ router.get('/:id/queue', async (req, res) => {
         quantidade: item.quantidade,
         produto: item.nomeProduto,
         funcionario: item.funcionarioNome || 'Não informado',
+        funcionarioId: item.funcionarioId || null,
         horario: item.createdAt,
         status: item.status,
         preparedAt: item.preparedAt,
-        preparedBy: item.preparedByNome
+        preparedBy: item.preparedByNome,
+        preparedById: item.preparedById
       };
     });
 
@@ -172,7 +175,9 @@ router.patch('/sale/:saleId/item/:itemId/status', async (req, res) => {
     // Atualizar o status do item
     let updatedItem = null;
     if (status === 'entregue') {
-      const affected = await prisma.$executeRawUnsafe(`UPDATE \`SaleItem\` SET status = 'entregue' WHERE id = ${parseInt(itemId)} AND saleId = ${parseInt(saleId)} LIMIT 1`);
+      const fallbackPrepared = Number(preparedById) || existingItem.preparedById || existingItem.sale?.funcionarioId || null;
+      const setPrepared = fallbackPrepared ? `, preparedById = IFNULL(preparedById, ${fallbackPrepared})` : '';
+      const affected = await prisma.$executeRawUnsafe(`UPDATE \`SaleItem\` SET status = 'entregue'${setPrepared} WHERE id = ${parseInt(itemId)} AND saleId = ${parseInt(saleId)} LIMIT 1`);
       if (!affected) {
         return res.status(404).json({ success: false, message: 'Item não encontrado para entregar' });
       }
@@ -186,7 +191,9 @@ router.patch('/sale/:saleId/item/:itemId/status', async (req, res) => {
       });
     } else {
       if (status === 'pronto') {
-        const affected = await prisma.$executeRawUnsafe(`UPDATE \`SaleItem\` SET status = 'pronto', preparedAt = IFNULL(preparedAt, NOW()) WHERE id = ${parseInt(itemId)} AND saleId = ${parseInt(saleId)} LIMIT 1`);
+        const fallbackPrepared = Number(preparedById) || existingItem.preparedById || existingItem.sale?.funcionarioId || null;
+        const setPrepared = fallbackPrepared ? `, preparedById = IFNULL(preparedById, ${fallbackPrepared})` : '';
+        const affected = await prisma.$executeRawUnsafe(`UPDATE \`SaleItem\` SET status = 'pronto', preparedAt = IFNULL(preparedAt, NOW())${setPrepared} WHERE id = ${parseInt(itemId)} AND saleId = ${parseInt(saleId)} LIMIT 1`);
         if (!affected) {
           return res.status(404).json({ success: false, message: 'Item não encontrado para marcar como pronto' });
         }

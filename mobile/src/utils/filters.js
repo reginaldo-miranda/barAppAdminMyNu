@@ -2,6 +2,9 @@ export const computeDateRange = (preset, customFrom, customTo) => {
   const pad = (n) => String(n).padStart(2, '0');
   const fmt = (dt) => `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
   const today = new Date();
+  if (preset === 'all' || preset == null) {
+    return { from: null, to: null };
+  }
   if (preset === 'hoje') {
     const s = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     return { from: fmt(s), to: fmt(s) };

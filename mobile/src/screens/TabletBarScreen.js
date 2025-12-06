@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, RefreshControl, Vibration, Animated, Pressable, TextInput, ScrollView, Dimensions } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, RefreshControl, Vibration, Animated, Pressable, ScrollView, Dimensions } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { apiService, authService } from '../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -13,14 +13,14 @@ import { imprimirPedidoSetor } from '../utils/printSetor';
 export default function TabletBarScreen(props = {}) {
   const { setorIdOverride, setorNomeOverride, forceFilterStatus, hiddenIds } = props || {};
   const [items, setItems] = useState([]);
+  const [rawItems, setRawItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [setorId, setSetorId] = useState(null);
   const [setorNome, setSetorNome] = useState('Bar');
   const [submittingId, setSubmittingId] = useState(null);
   const [feedbackMsg, setFeedbackMsg] = useState({ type: null, text: '' });
-  const [headerCollapsed, setHeaderCollapsed] = useState(true);
   const screenHeight = Dimensions.get('window').height;
-  const [datePreset, setDatePreset] = useState('hoje');
+  const [datePreset, setDatePreset] = useState('all');
   const [customFrom, setCustomFrom] = useState({ d: null, m: null, y: null });
   const [customTo, setCustomTo] = useState({ d: null, m: null, y: null });
   const [employees, setEmployees] = useState([]);
@@ -117,24 +117,27 @@ export default function TabletBarScreen(props = {}) {
   };
 
   // Buscar itens do setor
-  const buscarItensDoSetor = async (idSetor) => {
+  const buscarItensDoSetor = async (idSetor, statusOverride) => {
     if (!idSetor) return;
     
     try {
       setLoading(true);
       const token = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+      const activeStatus = statusOverride || (forceFilterStatus || filterStatus);
       const range = computeDateRange(datePreset, customFrom, customTo);
-      const dateParams = buildQueueParams(forceFilterStatus || filterStatus, range, selectedEmployeeIds);
+      const dateParams = buildQueueParams(activeStatus, range, selectedEmployeeIds);
       const response = await apiService.request({
         method: 'GET',
-        url: `/setor-impressao-queue/${idSetor}/queue?status=${forceFilterStatus || filterStatus}${dateParams}`,
+        url: `/setor-impressao-queue/${idSetor}/queue?status=${activeStatus}${dateParams}`,
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
 
       if (response.data?.success) {
         const arr = response.data.data || [];
-        const filtered = Array.isArray(hiddenIds) && hiddenIds.length > 0 ? arr.filter((i) => !hiddenIds.includes(Number(i.id))) : arr;
-        setItems(filtered);
+        setRawItems(arr);
+        const base = Array.isArray(hiddenIds) && hiddenIds.length > 0 ? arr.filter((i) => !hiddenIds.includes(Number(i.id))) : arr;
+        console.log('[ENTREGUES FILTRO][BAR][SERVER]', { status: activeStatus, range, employeeIds: selectedEmployeeIds, rawCount: arr.length, showCount: base.length });
+        setItems(base);
       }
     } catch (error) {
       console.error('Erro ao buscar itens:', error);
@@ -406,20 +409,18 @@ export default function TabletBarScreen(props = {}) {
             <TouchableOpacity style={styles.iconButton} onPress={imprimirPedidos}>
               <Ionicons name="print" size={18} color="#fff" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconButtonOutline} onPress={() => setHeaderCollapsed((v)=>!v)}>
-              <Ionicons name={headerCollapsed ? 'chevron-down' : 'chevron-up'} size={18} color="#4CAF50" />
-            </TouchableOpacity>
+            
           </View>
         </View>
         {!forceFilterStatus && (
           <View style={styles.filtersRow}>
-            <TouchableOpacity onPress={() => { setFilterStatus('pendente'); }} style={[styles.filterChip, filterStatus === 'pendente' && styles.filterChipActive]}>
+            <TouchableOpacity onPress={() => { setFilterStatus('pendente'); if (setorId) buscarItensDoSetor(setorId, 'pendente'); }} style={[styles.filterChip, filterStatus === 'pendente' && styles.filterChipActive]}>
               <Text style={[styles.filterText, filterStatus === 'pendente' && styles.filterTextActive]}>Em preparação</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => { setFilterStatus('pronto'); }} style={[styles.filterChip, filterStatus === 'pronto' && styles.filterChipActive]}>
+            <TouchableOpacity onPress={() => { setFilterStatus('pronto'); if (setorId) buscarItensDoSetor(setorId, 'pronto'); }} style={[styles.filterChip, filterStatus === 'pronto' && styles.filterChipActive]}>
               <Text style={[styles.filterText, filterStatus === 'pronto' && styles.filterTextActive]}>Prontos</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => { setFilterStatus('entregue'); }} style={[styles.filterChip, filterStatus === 'entregue' && styles.filterChipActive]}>
+            <TouchableOpacity onPress={() => { setFilterStatus('entregue'); if (setorId) buscarItensDoSetor(setorId, 'entregue'); }} style={[styles.filterChip, filterStatus === 'entregue' && styles.filterChipActive]}>
               <Text style={[styles.filterText, filterStatus === 'entregue' && styles.filterTextActive]}>Entregues</Text>
             </TouchableOpacity>
           </View>
@@ -433,7 +434,7 @@ export default function TabletBarScreen(props = {}) {
           <View style={styles.compactFiltersArea}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalRow}>
               {['hoje','semana','mes','custom'].map((p) => (
-                <TouchableOpacity key={p} onPress={() => setDatePreset(p)} style={[styles.filterChipSm, datePreset === p && styles.filterChipSmActive]}>
+                <TouchableOpacity key={p} onPress={() => { setDatePreset(p); if (setorId) buscarItensDoSetor(setorId); }} style={[styles.filterChipSm, datePreset === p && styles.filterChipSmActive]}>
                   <Text style={[styles.filterTextSm, datePreset === p && styles.filterTextSmActive]}>
                     {p === 'hoje' ? 'Hoje' : p === 'semana' ? 'Semana' : p === 'mes' ? 'Mês' : 'Pers.'}
                   </Text>
@@ -441,9 +442,9 @@ export default function TabletBarScreen(props = {}) {
               ))}
               {employees.map((e) => {
                 const checked = selectedEmployeeIds.includes(e.id);
-                const count = items.filter(i => i.status==='entregue' && i.preparedBy === e.nome).length;
+                const count = items.filter(i => i.status==='entregue' && (Number(i.preparedById) === Number(e.id) || Number(i.funcionarioId) === Number(e.id))).length;
                 return (
-                  <TouchableOpacity key={e.id} style={[styles.employeeChip, checked && styles.employeeChipActive]} onPress={() => setSelectedEmployeeIds((prev)=> checked ? prev.filter(id=>id!==e.id) : [...prev, e.id])}>
+                  <TouchableOpacity key={e.id} style={[styles.employeeChip, checked && styles.employeeChipActive]} onPress={() => { setSelectedEmployeeIds((prev)=> checked ? prev.filter(id=>id!==e.id) : [...prev, e.id]); if (setorId) buscarItensDoSetor(setorId); }}>
                     <Text style={[styles.employeeChipText, checked && styles.employeeChipTextActive]}>{e.nome}</Text>
                     <Text style={[styles.employeeChipCount, checked && styles.employeeChipTextActive]}>{count}</Text>
                   </TouchableOpacity>
@@ -452,42 +453,9 @@ export default function TabletBarScreen(props = {}) {
             </ScrollView>
           </View>
         )}
-        {!headerCollapsed && (forceFilterStatus === 'entregue' || filterStatus === 'entregue') && (
-          <View style={styles.advancedFilters}>
-            <Text style={styles.filtersLabel}>Filtros adicionais</Text>
-            <View style={{ flexDirection: 'row', marginTop: 8 }}>
-              {['hoje','semana','mes','custom'].map((p) => (
-                <TouchableOpacity key={p} onPress={() => setDatePreset(p)} style={[styles.filterChip, datePreset === p && styles.filterChipActive]}>
-                  <Text style={[styles.filterText, datePreset === p && styles.filterTextActive]}>
-                    {p === 'hoje' ? 'Hoje' : p === 'semana' ? 'Semana' : p === 'mes' ? 'Mês' : 'Personalizado'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            {datePreset === 'custom' && (
-              <View style={{ marginTop: 8 }}>
-                <Text style={styles.filterHint}>Selecione data inicial e final</Text>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <View style={styles.dateBox}>
-                    <Text style={styles.dateLabel}>Inicial</Text>
-                    <View style={{ flexDirection: 'row' }}>
-                      <PickerSmall value={customFrom.d} onChange={(v)=>setCustomFrom({ ...customFrom, d: v })} range={[...Array(31)].map((_,i)=>i+1)} />
-                      <PickerSmall value={customFrom.m} onChange={(v)=>setCustomFrom({ ...customFrom, m: v })} range={[...Array(12)].map((_,i)=>i+1)} />
-                      <PickerSmall value={customFrom.y} onChange={(v)=>setCustomFrom({ ...customFrom, y: v })} range={[new Date().getFullYear()-1, new Date().getFullYear(), new Date().getFullYear()+1]} />
-                    </View>
-                  </View>
-                  <View style={styles.dateBox}>
-                    <Text style={styles.dateLabel}>Final</Text>
-                    <View style={{ flexDirection: 'row' }}>
-                      <PickerSmall value={customTo.d} onChange={(v)=>setCustomTo({ ...customTo, d: v })} range={[...Array(31)].map((_,i)=>i+1)} />
-                      <PickerSmall value={customTo.m} onChange={(v)=>setCustomTo({ ...customTo, m: v })} range={[...Array(12)].map((_,i)=>i+1)} />
-                      <PickerSmall value={customTo.y} onChange={(v)=>setCustomTo({ ...customTo, y: v })} range={[new Date().getFullYear()-1, new Date().getFullYear(), new Date().getFullYear()+1]} />
-                    </View>
-                  </View>
-                </View>
-              </View>
-            )}
-          </View>
+        
+        {(forceFilterStatus === 'entregue' || filterStatus === 'entregue') && items.length === 0 && (
+          <Text style={styles.noResultsBanner}>Nenhum item encontrado com os filtros selecionados</Text>
         )}
       </View>
       {!forceFilterStatus && (
@@ -574,7 +542,6 @@ const styles = StyleSheet.create({
   headerTitleCompact: { fontSize: 18, fontWeight: '700', color: '#4CAF50', marginLeft: 6 },
   headerSubtitleCompact: { fontSize: 12, color: '#666', marginLeft: 8 },
   iconButton: { marginLeft: 8, backgroundColor: '#4CAF50', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16 },
-  iconButtonOutline: { marginLeft: 6, borderWidth: 1, borderColor: '#4CAF50', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 16 },
   compactFiltersArea: { marginTop: 6 },
   horizontalRow: { alignItems: 'center' },
   filterChipSm: { borderWidth: 1, borderColor: '#ddd', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 4, marginRight: 6, backgroundColor: '#fff' },
