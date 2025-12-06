@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, RefreshControl, Vibration, Animated, Pressable } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, RefreshControl, Vibration, Animated, Pressable, TextInput, ScrollView, Dimensions } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { apiService, authService } from '../services/api';
+import { computeDateRange, buildQueueParams } from '../utils/filters';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../services/storage';
 import { Ionicons } from '@expo/vector-icons';
+import { Picker } from '@react-native-picker/picker';
 import { useSetorSync } from '../hooks/useSetorSync';
 import { imprimirPedidoSetor } from '../utils/printSetor';
 
@@ -16,6 +18,15 @@ export default function TabletCozinhaScreen(props = {}) {
   const [setorNome, setSetorNome] = useState('Cozinha');
   const [submittingId, setSubmittingId] = useState(null);
   const [feedbackMsg, setFeedbackMsg] = useState({ type: null, text: '' });
+  const [headerCollapsed, setHeaderCollapsed] = useState(true);
+  const screenHeight = Dimensions.get('window').height;
+  const [datePreset, setDatePreset] = useState('hoje');
+  const [customFrom, setCustomFrom] = useState({ d: null, m: null, y: null });
+  const [customTo, setCustomTo] = useState({ d: null, m: null, y: null });
+  const [employees, setEmployees] = useState([]);
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([]);
+  const [employeeSearch, setEmployeeSearch] = useState('');
+  const [showCustomDateModal, setShowCustomDateModal] = useState(false);
 
   const ensureToken = useCallback(async () => {
     try {
@@ -73,9 +84,11 @@ export default function TabletCozinhaScreen(props = {}) {
     try {
       setLoading(true);
       const token = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+      const range = computeDateRange(datePreset, customFrom, customTo);
+      const dateParams = buildQueueParams(forceFilterStatus || filterStatus, range, selectedEmployeeIds);
       const response = await apiService.request({
         method: 'GET',
-        url: `/setor-impressao-queue/${idSetor}/queue?status=${forceFilterStatus || filterStatus}`,
+        url: `/setor-impressao-queue/${idSetor}/queue?status=${forceFilterStatus || filterStatus}${dateParams}`,
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
 
@@ -91,6 +104,17 @@ export default function TabletCozinhaScreen(props = {}) {
       setLoading(false);
     }
   };
+
+  // date range util moved to utils/filters
+
+  const carregarFuncionarios = useCallback(async () => {
+    try {
+      const token = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+      const resp = await apiService.request({ method: 'GET', url: '/employee/list', headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      const arr = Array.isArray(resp?.data) ? resp.data : Array.isArray(resp?.data?.data) ? resp.data.data : [];
+      setEmployees(arr);
+    } catch {}
+  }, []);
 
   // Buscar ID do setor cozinha
   const buscarSetorCozinha = async () => {
@@ -284,7 +308,10 @@ export default function TabletCozinhaScreen(props = {}) {
     if (id) {
       buscarItensDoSetor(id);
     }
-  }, [setorId, setorIdOverride, filterStatus, forceFilterStatus, hiddenIds]);
+    if ((forceFilterStatus || filterStatus) === 'entregue') {
+      carregarFuncionarios();
+    }
+  }, [setorId, setorIdOverride, filterStatus, forceFilterStatus, hiddenIds, datePreset, customFrom, customTo, selectedEmployeeIds, carregarFuncionarios]);
 
   const mesasAgrupadas = agruparPorMesa(items);
 
@@ -410,26 +437,79 @@ export default function TabletCozinhaScreen(props = {}) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <View style={styles.headerTopRow}>
-          <Ionicons name="restaurant" size={32} color="#ff6b6b" />
-          <TouchableOpacity style={styles.printButton} onPress={imprimirPedidos}>
-            <Ionicons name="print" size={20} color="#fff" />
-            <Text style={styles.printButtonText}>Imprimir</Text>
-          </TouchableOpacity>
+        <View style={styles.headerCompactRow}>
+          <View style={styles.headerLeftGroup}>
+            <Ionicons name="restaurant" size={24} color="#ff6b6b" />
+            <Text style={styles.headerTitleCompact}>{setorNome}</Text>
+            <Text style={styles.headerSubtitleCompact}>{forceFilterStatus === 'pronto' ? 'Prontos' : `${items.length} ${filterStatus}`}</Text>
+          </View>
+          <View style={styles.headerRightGroup}>
+            <View style={[styles.connectionStatus, connected ? styles.connected : styles.disconnected]}>
+              <Ionicons name={connected ? 'wifi' : 'wifi-off'} size={14} color="#fff" />
+            </View>
+            <TouchableOpacity style={styles.iconButton} onPress={imprimirPedidos}>
+              <Ionicons name="print" size={18} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.iconButtonOutline} onPress={() => setHeaderCollapsed((v)=>!v)}>
+              <Ionicons name={headerCollapsed ? 'chevron-down' : 'chevron-up'} size={18} color="#ff6b6b" />
+            </TouchableOpacity>
+          </View>
         </View>
-        <Text style={styles.headerTitle}>{setorNome}</Text>
-        <Text style={styles.headerSubtitle}>{forceFilterStatus === 'pronto' ? 'Prontos para entregar' : `${items.length} pedido(s) ${filterStatus === 'pendente' ? 'pendente(s)' : filterStatus === 'pronto' ? 'pronto(s)' : 'entregue(s)'}`}</Text>
+        {!forceFilterStatus && (
+          <View style={styles.filtersRow}>
+            <TouchableOpacity onPress={() => { setFilterStatus('pendente'); }} style={[styles.filterChip, filterStatus === 'pendente' && styles.filterChipActive]}>
+              <Text style={[styles.filterText, filterStatus === 'pendente' && styles.filterTextActive]}>Em preparação</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => { setFilterStatus('pronto'); }} style={[styles.filterChip, filterStatus === 'pronto' && styles.filterChipActive]}>
+              <Text style={[styles.filterText, filterStatus === 'pronto' && styles.filterTextActive]}>Prontos</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => { setFilterStatus('entregue'); }} style={[styles.filterChip, filterStatus === 'entregue' && styles.filterChipActive]}>
+              <Text style={[styles.filterText, filterStatus === 'entregue' && styles.filterTextActive]}>Entregues</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         {feedbackMsg.text ? (
           <Text style={[styles.feedbackMsg, feedbackMsg.type === 'error' ? styles.feedbackError : styles.feedbackSuccess]}>
             {feedbackMsg.text}
           </Text>
         ) : null}
-        <View style={[styles.connectionStatus, connected ? styles.connected : styles.disconnected]}>
-          <Ionicons name={connected ? 'wifi' : 'wifi-off'} size={16} color="#fff" />
-          <Text style={styles.connectionText}>
-            {connected ? 'Conectado' : 'Desconectado'}
-          </Text>
-        </View>
+        {(forceFilterStatus === 'entregue' || filterStatus === 'entregue') && (
+          <View style={styles.compactFiltersArea}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalRow}>
+              {['hoje','semana','mes','custom'].map((p) => (
+                <TouchableOpacity key={p} onPress={() => setDatePreset(p)} style={[styles.filterChipSm, datePreset === p && styles.filterChipSmActive]}>
+                  <Text style={[styles.filterTextSm, datePreset === p && styles.filterTextSmActive]}>
+                    {p === 'hoje' ? 'Hoje' : p === 'semana' ? 'Semana' : p === 'mes' ? 'Mês' : 'Pers.'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+              {employees.map((e) => {
+                const checked = selectedEmployeeIds.includes(e.id);
+                const count = items.filter(i => i.status==='entregue' && i.preparedBy === e.nome).length;
+                return (
+                  <TouchableOpacity key={e.id} style={[styles.employeeChip, checked && styles.employeeChipActive]} onPress={() => setSelectedEmployeeIds((prev)=> checked ? prev.filter(id=>id!==e.id) : [...prev, e.id])}>
+                    <Text style={[styles.employeeChipText, checked && styles.employeeChipTextActive]}>{e.nome}</Text>
+                    <Text style={[styles.employeeChipCount, checked && styles.employeeChipTextActive]}>{count}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
+        {!headerCollapsed && (forceFilterStatus === 'entregue' || filterStatus === 'entregue') && (
+          <View style={styles.advancedFilters}>
+            <Text style={styles.filtersLabel}>Filtros adicionais</Text>
+            <View style={{ flexDirection: 'row', marginTop: 8 }}>
+              {['hoje','semana','mes','custom'].map((p) => (
+                <TouchableOpacity key={p} onPress={() => setDatePreset(p)} style={[styles.filterChip, datePreset === p && styles.filterChipActive]}>
+                  <Text style={[styles.filterText, datePreset === p && styles.filterTextActive]}>
+                    {p === 'hoje' ? 'Hoje' : p === 'semana' ? 'Semana' : p === 'mes' ? 'Mês' : 'Personalizado'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
       </View>
       {!forceFilterStatus && (
       <View style={styles.filtersRow}>
@@ -444,7 +524,69 @@ export default function TabletCozinhaScreen(props = {}) {
         </TouchableOpacity>
       </View>
       )}
+      {(forceFilterStatus === 'entregue' || filterStatus === 'entregue') && (
+        <View style={styles.advancedFilters}>
+          <Text style={styles.filtersLabel}>Filtros de entrega</Text>
+          <View style={{ flexDirection: 'row', marginTop: 8 }}>
+            {['hoje','semana','mes','custom'].map((p) => (
+              <TouchableOpacity key={p} onPress={() => setDatePreset(p)} style={[styles.filterChip, datePreset === p && styles.filterChipActive]}>
+                <Text style={[styles.filterText, datePreset === p && styles.filterTextActive]}>
+                  {p === 'hoje' ? 'Hoje' : p === 'semana' ? 'Semana' : p === 'mes' ? 'Mês' : 'Personalizado'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {datePreset === 'custom' && (
+            <View style={{ marginTop: 8 }}>
+              <Text style={styles.filterHint}>Selecione data inicial e final</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <View style={styles.dateBox}>
+                  <Text style={styles.dateLabel}>Inicial</Text>
+                  <View style={{ flexDirection: 'row' }}>
+                    <PickerSmall value={customFrom.d} onChange={(v)=>setCustomFrom({ ...customFrom, d: v })} range={[...Array(31)].map((_,i)=>i+1)} />
+                    <PickerSmall value={customFrom.m} onChange={(v)=>setCustomFrom({ ...customFrom, m: v })} range={[...Array(12)].map((_,i)=>i+1)} />
+                    <PickerSmall value={customFrom.y} onChange={(v)=>setCustomFrom({ ...customFrom, y: v })} range={[new Date().getFullYear()-1, new Date().getFullYear(), new Date().getFullYear()+1]} />
+                  </View>
+                </View>
+                <View style={styles.dateBox}>
+                  <Text style={styles.dateLabel}>Final</Text>
+                  <View style={{ flexDirection: 'row' }}>
+                    <PickerSmall value={customTo.d} onChange={(v)=>setCustomTo({ ...customTo, d: v })} range={[...Array(31)].map((_,i)=>i+1)} />
+                    <PickerSmall value={customTo.m} onChange={(v)=>setCustomTo({ ...customTo, m: v })} range={[...Array(12)].map((_,i)=>i+1)} />
+                    <PickerSmall value={customTo.y} onChange={(v)=>setCustomTo({ ...customTo, y: v })} range={[new Date().getFullYear()-1, new Date().getFullYear(), new Date().getFullYear()+1]} />
+                  </View>
+                </View>
+              </View>
+            </View>
+          )}
+          <View style={{ marginTop: 8 }}>
+            <Text style={styles.filterHint}>Funcionários</Text>
+            <View style={styles.employeeBox}>
+              <Text style={styles.searchLabel}>Buscar</Text>
+              <TextInput style={styles.searchInput} placeholder="Digite o nome" value={employeeSearch} onChangeText={setEmployeeSearch} />
+              <FlatList
+                data={employees.filter(e => String(e.nome||'').toLowerCase().includes(employeeSearch.toLowerCase()))}
+                keyExtractor={(e)=>String(e.id)}
+                style={{ maxHeight: 180 }}
+                renderItem={({ item: e }) => {
+                  const checked = selectedEmployeeIds.includes(e.id);
+                  return (
+                    <TouchableOpacity style={styles.employeeItem} onPress={() => {
+                      setSelectedEmployeeIds((prev) => checked ? prev.filter(id => id !== e.id) : [...prev, e.id]);
+                    }}>
+                      <Ionicons name={checked ? 'checkbox' : 'square-outline'} size={20} color={checked ? '#4CAF50' : '#616161'} />
+                      <Text style={styles.employeeName}>{e.nome}</Text>
+                      <Text style={styles.employeeCount}>{items.filter(i => i.status==='entregue' && i.preparedBy === e.nome).length}</Text>
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            </View>
+          </View>
+        </View>
+      )}
       
+      <View style={[styles.deliveriesArea, { minHeight: screenHeight * 0.7 }] }>
       <FlatList
         data={[...items].sort((a, b) => new Date(a.horario).getTime() - new Date(b.horario).getTime())}
         renderItem={renderItem}
@@ -468,6 +610,20 @@ export default function TabletCozinhaScreen(props = {}) {
           </View>
         }
       />
+      </View>
+    </View>
+  );
+}
+
+function PickerSmall({ value, onChange, range }) {
+  return (
+    <View style={{ borderWidth: 1, borderColor: '#ddd', borderRadius: 8, marginRight: 4, backgroundColor: '#fff' }}>
+      <Picker selectedValue={value} onValueChange={onChange} style={{ width: 90, height: 40 }}>
+        <Picker.Item label="--" value={null} />
+        {range.map((v) => (
+          <Picker.Item key={String(v)} label={String(v)} value={v} />
+        ))}
+      </Picker>
     </View>
   );
 }
@@ -479,25 +635,38 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: '#fff',
-    padding: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
+    elevation: 2,
   },
   headerTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    width: '100%',
-    marginBottom: 10,
+    display: 'none'
   },
+  headerCompactRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  headerLeftGroup: { flexDirection: 'row', alignItems: 'center' },
+  headerRightGroup: { flexDirection: 'row', alignItems: 'center' },
+  headerTitleCompact: { fontSize: 18, fontWeight: '700', color: '#ff6b6b', marginLeft: 6 },
+  headerSubtitleCompact: { fontSize: 12, color: '#666', marginLeft: 8 },
+  iconButton: { marginLeft: 8, backgroundColor: '#ff6b6b', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16 },
+  iconButtonOutline: { marginLeft: 6, borderWidth: 1, borderColor: '#ff6b6b', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 16 },
+  compactFiltersArea: { marginTop: 6 },
+  horizontalRow: { alignItems: 'center' },
+  filterChipSm: { borderWidth: 1, borderColor: '#ddd', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 4, marginRight: 6, backgroundColor: '#fff' },
+  filterChipSmActive: { borderColor: '#ff6b6b', backgroundColor: '#ffe7e7' },
+  filterTextSm: { fontSize: 12, color: '#666', fontWeight: '600' },
+  filterTextSmActive: { color: '#ff6b6b', fontWeight: '700' },
+  employeeChip: { borderWidth: 1, borderColor: '#ddd', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 4, marginRight: 6, backgroundColor: '#fff', flexDirection: 'row', alignItems: 'center' },
+  employeeChipActive: { borderColor: '#ff6b6b', backgroundColor: '#ffe7e7' },
+  employeeChipText: { fontSize: 12, color: '#333', fontWeight: '600' },
+  employeeChipTextActive: { color: '#ff6b6b' },
+  employeeChipCount: { fontSize: 12, color: '#666', marginLeft: 6 },
+  deliveriesArea: { flexGrow: 1 },
   printButton: {
     backgroundColor: '#2196F3',
     flexDirection: 'row',
@@ -719,6 +888,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginTop: 12,
   },
+  advancedFilters: {
+    marginHorizontal: 15,
+    marginTop: 10,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#eee'
+  },
+  filtersLabel: { fontSize: 16, fontWeight: '700', color: '#333' },
+  filterHint: { fontSize: 13, color: '#666', marginBottom: 6 },
+  dateBox: { flex: 1, marginHorizontal: 4 },
+  dateLabel: { fontSize: 12, color: '#666', marginBottom: 4 },
+  employeeBox: { marginTop: 6 },
+  searchLabel: { fontSize: 12, color: '#666' },
+  searchInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, marginVertical: 6, backgroundColor: '#f9f9f9' },
+  employeeItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6 },
+  employeeName: { marginLeft: 8, flex: 1, color: '#333' },
+  employeeCount: { fontSize: 12, color: '#666' },
   filterChip: {
     borderWidth: 1,
     borderColor: '#ddd',

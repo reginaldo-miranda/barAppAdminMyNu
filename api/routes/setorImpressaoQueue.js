@@ -12,7 +12,7 @@ const prisma = getActivePrisma();
 router.get('/:id/queue', async (req, res) => {
   try {
     const setorId = parseInt(req.params.id);
-    const { status = 'pendente' } = req.query;
+    const { status = 'pendente', from, to, employees } = req.query;
     // Obter setor padrão (fallback) quando produto não estiver vinculado
     let defaultSetorId = null;
     try {
@@ -23,6 +23,28 @@ router.get('/:id/queue', async (req, res) => {
     } catch {}
 
     // Usar consulta SQL raw para buscar itens por setor (inclui fallback quando sem vínculo)
+    // Filtros opcionais (apenas para entregues): intervalo de data e funcionários
+    const extraFilters = [];
+    if (String(status) === 'entregue') {
+      if (from) {
+        const f = String(from).slice(0, 10);
+        extraFilters.push(`AND si.preparedAt >= '${f} 00:00:00'`);
+      }
+      if (to) {
+        const t = String(to).slice(0, 10);
+        extraFilters.push(`AND si.preparedAt <= '${t} 23:59:59'`);
+      }
+      if (employees) {
+        const ids = String(employees)
+          .split(',')
+          .map((v) => parseInt(v))
+          .filter((n) => Number.isInteger(n) && n > 0);
+        if (ids.length > 0) {
+          extraFilters.push(`AND si.preparedById IN (${ids.join(',')})`);
+        }
+      }
+    }
+
     const sql = `
       SELECT 
         si.id,
@@ -60,6 +82,7 @@ router.get('/:id/queue', async (req, res) => {
             AND ? = ?
           )
         )
+      ${extraFilters.join(' ')}
       ORDER BY si.createdAt ASC
     `;
 
