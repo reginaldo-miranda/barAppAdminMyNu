@@ -10,7 +10,7 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { apiService } from '../../services/api';
+import { apiService } from '../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ValidationService from '../utils/validation';
 import { logger } from '../utils/logger';

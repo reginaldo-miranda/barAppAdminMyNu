@@ -13,7 +13,7 @@ import {
   FlatList
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { apiService } from '../../services/api';
+import { apiService } from '../services/api';
 import ValidationService from '../utils/validation';
 import { logger } from '../utils/logger';
 
