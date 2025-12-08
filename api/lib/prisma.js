@@ -20,29 +20,22 @@ const buildDatabaseUrl = (target) => {
 
 // Determinar URLs e instanciar clientes dedicados
 const urlLocal = buildDatabaseUrl("local");
-const urlRailway = buildDatabaseUrl("railway");
 const prismaLocal = new PrismaClient({ datasources: { db: { url: urlLocal } } });
-const prismaRailway = new PrismaClient({ datasources: { db: { url: urlRailway } } });
 
 // Selecionar cliente inicial com base no DB_TARGET
-let initialTarget = (process.env.DB_TARGET || '').toLowerCase();
-if (initialTarget !== 'local' && initialTarget !== 'railway') {
-  initialTarget = 'local';
-}
-let prisma = initialTarget === 'railway' ? prismaRailway : prismaLocal;
-process.env.DB_TARGET = initialTarget;
-process.env.DATABASE_URL = initialTarget === 'railway' ? urlRailway : urlLocal;
+let prisma = prismaLocal;
+process.env.DB_TARGET = 'local';
+process.env.DATABASE_URL = urlLocal;
 
 // Alternar dinamicamente o alvo do banco (local/railway)
-export const switchDbTarget = async (target) => {
+export const switchDbTarget = async () => {
   try {
-    const next = String(target || '').toLowerCase() === 'railway' ? 'railway' : 'local';
     await prisma.$disconnect().catch(() => {});
-    prisma = next === 'railway' ? prismaRailway : prismaLocal;
-    process.env.DB_TARGET = next;
-    process.env.DATABASE_URL = next === 'railway' ? urlRailway : urlLocal;
+    prisma = prismaLocal;
+    process.env.DB_TARGET = 'local';
+    process.env.DATABASE_URL = urlLocal;
     await prisma.$connect();
-    return { ok: true, target: next };
+    return { ok: true, target: 'local' };
   } catch (err) {
     console.error('Erro ao alternar DB_TARGET (Prisma):', err);
     return { ok: false, error: 'Falha ao alternar DB_TARGET' };

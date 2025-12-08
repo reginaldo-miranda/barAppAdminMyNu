@@ -25,22 +25,7 @@ set -a
 source .env
 set +a
 
-# Seleção de banco de dados (argumento, variável ou prompt)
-if [ -n "$1" ]; then
-  DB_TARGET="$1"
-fi
-if [ -z "$DB_TARGET" ]; then
-  echo ""
-  echo "📊 Selecione o banco de dados:"
-  echo "  1) Local"
-  echo "  2) Railway"
-  read -p "👉 Escolha [1/2] (padrão: 2): " choice
-  case "$choice" in
-    1) DB_TARGET="local" ;;
-    2|"" ) DB_TARGET="railway" ;;
-    *) DB_TARGET="railway" ;;
-  esac
-fi
+DB_TARGET="local"
 
 # Garantir variáveis de conexão
 if ! grep -q "^DATABASE_URL_LOCAL=" .env; then
@@ -61,21 +46,9 @@ set -a
 source .env
 set +a
 
-# Definir DATABASE_URL conforme alvo
-case "$DB_TARGET" in
-  local)
-    export DATABASE_URL="$DATABASE_URL_LOCAL"
-    ;;
-  railway)
-    export DATABASE_URL="$DATABASE_URL_RAILWAY"
-    ;;
-  *)
-    echo "⚠️ Alvo desconhecido: $DB_TARGET. Usando 'railway'."
-    export DATABASE_URL="$DATABASE_URL_RAILWAY"
-    DB_TARGET="railway"
-    ;;
-esac
-export DB_TARGET
+# Definir sempre base local
+export DATABASE_URL="$DATABASE_URL_LOCAL"
+export DB_TARGET="local"
 
 # Funções utilitárias para garantir reinício limpo
 kill_by_port() {

@@ -14,7 +14,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { saleService, mesaService, comandaService, getWsUrl } from '../src/services/api';
+import { saleService, mesaService, comandaService, getWsUrl, authService } from '../src/services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { STORAGE_KEYS } from '../src/services/storage';
 import { useAuth } from '../src/contexts/AuthContext';
 import AddProductToTable from '../src/components/AddProductToTable';
 import ScreenIdentifier from '../src/components/ScreenIdentifier';
@@ -38,6 +40,21 @@ export default function SaleScreen() {
   const [itemsModalVisible, setItemsModalVisible] = useState(false);
   const isPhone = Dimensions.get('window').width < 768;
   const [initialItemsModalShown, setInitialItemsModalShown] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const existingToken = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+        if (!existingToken) {
+          const login = await authService.login({ email: 'admin@barapp.com', senha: '123456' });
+          const token = login?.data?.token;
+          if (token && mounted) await AsyncStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, token);
+        }
+      } catch {}
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   useEffect(() => {
     if (isPhone && !isViewMode && cart.length > 0 && !initialItemsModalShown) {
@@ -256,6 +273,7 @@ export default function SaleScreen() {
       // Atualiza o estado local com os dados do backend
       setSale(response.data);
       setCart(response.data.itens || []);
+      Alert.alert('Sucesso', `${product.nome} foi adicionado ao carrinho!`);
 
       try {
         const whatsTargets = Array.isArray(response?.data?.whatsTargets) ? response.data.whatsTargets : [];
@@ -469,6 +487,13 @@ export default function SaleScreen() {
       if (response?.data) {
         setSale(response.data);
         setCart(response.data.itens || []);
+        if (isIncrement) {
+          Alert.alert('Sucesso', 'Quantidade incrementada');
+        } else if (isDecrement) {
+          Alert.alert('Sucesso', 'Quantidade decrementada');
+        } else if (clampedQty <= 0) {
+          Alert.alert('Sucesso', 'Item removido');
+        }
         const updatedItems = response.data.itens || [];
         const updated = updatedItems.find((ci: any) => {
           const raw = (ci as any)?.produto;

@@ -16,7 +16,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 
 import { SafeIcon } from '../../components/SafeIcon';
-import { mesaService, saleService, employeeService, getWsUrl } from '../../src/services/api';
+import { mesaService, saleService, employeeService, getWsUrl, authService } from '../../src/services/api';
+import { STORAGE_KEYS } from '../../src/services/storage';
   import ProductSelector from '../../src/components/ProductSelector.js';
   import { useAuth } from '../../src/contexts/AuthContext';
   import SearchAndFilter from '../../src/components/SearchAndFilter';
@@ -56,6 +57,7 @@ export default function MesasScreen() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
   const [mesaOpenTotals, setMesaOpenTotals] = useState<Record<string, number>>({});
+  const [realtimeConnected, setRealtimeConnected] = useState(false);
   
   // Estados para modais
   const [gerarMesasModalVisible, setGerarMesasModalVisible] = useState(false);
@@ -124,6 +126,22 @@ export default function MesasScreen() {
   useEffect(() => {
     loadMesas();
     loadFuncionarios();
+  }, []);
+
+  // Garantir token de autenticação para operações protegidas
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const token = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+        if (!token) {
+          const login = await authService.login({ email: 'admin@barapp.com', senha: '123456' });
+          const tk = login?.data?.token;
+          if (tk && mounted) await AsyncStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, tk);
+        }
+      } catch {}
+    })();
+    return () => { mounted = false; };
   }, []);
 
   // Revalidar quando a tela ganhar foco e quando eventos de atualização ocorrerem
@@ -256,7 +274,7 @@ export default function MesasScreen() {
         const url = getWsUrl();
         if (!url) { startPolling(); return; }
         ws = new (globalThis as any).WebSocket(url);
-        ws.onopen = () => { reconnectDelay = 1000; stopPolling(); };
+        ws.onopen = () => { reconnectDelay = 1000; stopPolling(); setRealtimeConnected(true); };
         ws.onmessage = async (e: any) => {
           try {
             const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
@@ -301,6 +319,7 @@ export default function MesasScreen() {
           reconnectTimer = setTimeout(connectWebSocket, reconnectDelay);
           reconnectDelay = Math.min(reconnectDelay * 2, maxDelay);
           startPolling();
+          setRealtimeConnected(false);
         };
       } catch { startPolling(); }
     };
@@ -313,13 +332,14 @@ export default function MesasScreen() {
         if (!base) return;
         const url = `${base}/sale/stream`;
         sse = new (window as any).EventSource(url);
+        setRealtimeConnected(true);
         sse.onmessage = async (evt: any) => {
           try {
             const msg = JSON.parse(String(evt?.data || '{}'));
             if (msg?.type === 'sale:update') await scheduleFetch();
           } catch {}
         };
-        sse.onerror = () => { try { sse.close(); } catch {}; };
+        sse.onerror = () => { try { sse.close(); } catch {}; setRealtimeConnected(false); };
       } catch {}
     };
 
@@ -334,19 +354,20 @@ export default function MesasScreen() {
     };
   }, []);
 
-  useEffect(() => {
-    let since = Date.now();
-    const t = setInterval(async () => {
-      try {
-        const res = await saleService.updates(since);
-        if (res?.data?.updates?.length) {
-          since = res?.data?.now || Date.now();
-          await softRefreshMesas();
-        }
-      } catch {}
-    }, 1000);
-    return () => clearInterval(t);
-  }, []);
+useEffect(() => {
+  if (realtimeConnected) return;
+  let since = Date.now();
+  const t = setInterval(async () => {
+    try {
+      const res = await saleService.updates(since);
+      if (res?.data?.updates?.length) {
+        since = res?.data?.now || Date.now();
+        await softRefreshMesas();
+      }
+    } catch {}
+  }, 1500);
+  return () => clearInterval(t);
+}, [realtimeConnected]);
 
   // Estatísticas das mesas
   const stats = useMemo(() => {

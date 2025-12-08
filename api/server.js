@@ -218,7 +218,7 @@ const PORT = process.env.PORT || 4000;
 app.listen(PORT, '0.0.0.0', () => console.log(`✅ API rodando em: http://0.0.0.0:${PORT}`));
 
 // Conexão única com Prisma após iniciar servidor
-const dbTarget = process.env.DB_TARGET || (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('localhost') ? 'local' : 'railway');
+const dbTarget = 'local';
 prisma.$connect()
   .then(() => console.log(`✅ Conectado ao MySQL (${dbTarget})`))
   .catch(err => console.error("❌ Erro ao conectar MySQL:", err));

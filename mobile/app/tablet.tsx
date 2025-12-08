@@ -1,12 +1,12 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useWindowDimensions } from 'react-native';
+import { useWindowDimensions, NativeModules, Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import TabletCozinhaScreen from '../src/screens/TabletCozinhaScreen';
 import TabletBarScreen from '../src/screens/TabletBarScreen';
-import { apiService } from '../src/services/api';
-import { authService } from '../src/services/api';
+import { apiService, authService, setApiBaseUrl } from '../src/services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../src/services/storage';
 
@@ -17,6 +17,57 @@ export default function TabletMode() {
   const [activeSetorId, setActiveSetorId] = React.useState<number | null>(null);
   const [activeView, setActiveView] = React.useState<'setor' | 'pronto' | 'entregue'>('setor');
   const [hiddenDeliveredIds, setHiddenDeliveredIds] = React.useState<number[]>([]);
+
+  const isLocalHost = (url: string): boolean => {
+    try {
+      const u = new URL(String(url));
+      const h = u.hostname;
+      return ['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(String(h));
+    } catch {
+      return false;
+    }
+  };
+
+  const detectLanBaseUrl = (): string => {
+    const DEFAULT_PORT = 4000;
+    try {
+      const candidates: string[] = [];
+      const scriptUrl = (NativeModules as any)?.SourceCode?.scriptURL;
+      if (scriptUrl) {
+        const parsed = new URL(String(scriptUrl));
+        if (parsed.hostname) candidates.push(parsed.hostname);
+      }
+      const devHost = (Constants as any)?.expoGo?.developer?.host;
+      if (devHost) candidates.push(String(devHost).split(':')[0]);
+      const hostUri = (Constants as any)?.expoConfig?.hostUri;
+      if (hostUri) candidates.push(String(hostUri).split(':')[0]);
+      const dbgHost = (Constants as any)?.manifest?.debuggerHost;
+      if (dbgHost) candidates.push(String(dbgHost).split(':')[0]);
+      const envPackagerHost = (typeof process !== 'undefined' ? (process as any)?.env?.REACT_NATIVE_PACKAGER_HOSTNAME : '') || '';
+      if (envPackagerHost) candidates.push(envPackagerHost);
+      for (const h of candidates) {
+        const host = String(h);
+        if (host && !['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(host)) {
+          return `http://${host}:${DEFAULT_PORT}/api`;
+        }
+      }
+    } catch {}
+    return '';
+  };
+
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const base = apiService.getBaseURL();
+        if (!base || isLocalHost(base)) {
+          const detected = detectLanBaseUrl();
+          if (detected) {
+            await setApiBaseUrl(detected);
+          }
+        }
+      } catch {}
+    })();
+  }, []);
 
   React.useEffect(() => {
     let alive = true;

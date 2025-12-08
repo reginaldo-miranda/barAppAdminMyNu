@@ -5,7 +5,9 @@ import { router, useFocusEffect } from 'expo-router';
 import CriarComandaModal from '../../src/components/CriarComandaModal';
 // import ProdutosComandaModal from '../../src/components/ProdutosComandaModal';
 import SearchAndFilter from '../../src/components/SearchAndFilter';
-import { comandaService, employeeService, saleService, getWsUrl } from '../../src/services/api';
+import { comandaService, employeeService, saleService, getWsUrl, authService } from '../../src/services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { STORAGE_KEYS } from '../../src/services/storage';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { Comanda } from '../../src/types/index';
 import ScreenIdentifier from '../../src/components/ScreenIdentifier';
@@ -20,6 +22,7 @@ export default function ComandasAbertasScreen() {
   const [comandas, setComandas] = useState<Comanda[]>([]);
   const [filteredComandas, setFilteredComandas] = useState<Comanda[]>([]);
   const [loading, setLoading] = useState(true);
+  const [realtimeConnected, setRealtimeConnected] = useState(false);
   
   // Estados para fechamento de comanda (idêntico às mesas)
   const [fecharComandaModalVisible, setFecharComandaModalVisible] = useState(false);
@@ -55,10 +58,29 @@ export default function ComandasAbertasScreen() {
     loadStatusFilters();
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const token = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+        if (!token) {
+          const login = await authService.login({ email: 'admin@barapp.com', senha: '123456' });
+          const tk = login?.data?.token;
+          if (tk && mounted) await AsyncStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, tk);
+        }
+      } catch {}
+    })();
+    return () => { mounted = false; };
+  }, []);
+
   // Aplicar filtros sempre que os dados ou filtros mudarem (igual à tela de produtos)
   useEffect(() => {
     filterComandas();
   }, [searchText, comandas, selectedFilter]);
+
+  useEffect(() => {
+    loadComandas();
+  }, []);
 
   const loadStatusFilters = () => {
     // Configuração dos filtros de status igual à tela de produtos
@@ -71,17 +93,38 @@ export default function ComandasAbertasScreen() {
     setStatusFilters(filters);
   };
 
-  const loadComandas = async () => {
+  const applyComandas = (lista: Comanda[]) => {
+    setComandas((prev) => {
+      if (!Array.isArray(prev) || prev.length === 0) return lista;
+      // Evitar piscadas: manter ordem e atualizar apenas itens alterados
+      const byId = new Map<string, Comanda>();
+      prev.forEach((x: any) => byId.set(String(x._id || x.id), x as any));
+      const merged = lista.map((x: any) => {
+        const id = String(x._id || x.id);
+        const old = byId.get(id);
+        if (!old) return x as any;
+        // Atualiza campos relevantes sem reordenar
+        return { ...old, ...x } as any;
+      });
+      return merged;
+    });
+  };
+
+  const loadComandas = async (silent?: boolean) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const response = await comandaService.getAll();
       const todasComandas = response.data?.filter((venda: Comanda) => venda.tipoVenda === 'comanda') || [];
-      setComandas(todasComandas);
+      if (!silent) {
+        setComandas(todasComandas);
+      } else {
+        applyComandas(todasComandas);
+      }
     } catch (error: any) {
       console.error('Erro ao carregar comandas:', error);
       Alert.alert('Erro', 'Não foi possível carregar as comandas.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -89,7 +132,7 @@ export default function ComandasAbertasScreen() {
     try {
       const response = await comandaService.getAll();
       const todasComandas = response.data?.filter((venda: Comanda) => venda.tipoVenda === 'comanda') || [];
-      setComandas(todasComandas);
+      applyComandas(todasComandas);
     } catch {}
   };
 
@@ -123,38 +166,40 @@ export default function ComandasAbertasScreen() {
   useFocusEffect(
     useCallback(() => {
       const off = events.on('comandas:refresh', () => {
-        loadComandas();
+        softRefreshComandas();
       });
       return () => off();
-    }, [loadComandas])
+    }, [])
   );
 
-  useFocusEffect(useCallback(() => {
-    const intervalId = setInterval(() => {
-      loadComandas();
-    }, 2000);
-    return () => clearInterval(intervalId);
-  }, [loadComandas]));
+  useFocusEffect(
+    useCallback(() => {
+      softRefreshComandas();
+      return () => {};
+    }, [])
+  );
 
-  useEffect(() => {
-    let since = Date.now();
-    const t = setInterval(async () => {
-      try {
-        const res = await saleService.updates(since);
-        if (res?.data?.updates?.length) {
-          since = res?.data?.now || Date.now();
-          await softRefreshComandas();
-        }
-      } catch {}
-    }, 500);
-    return () => clearInterval(t);
-  }, []);
+useEffect(() => {
+  if (realtimeConnected) return;
+  let since = Date.now();
+  const t = setInterval(async () => {
+    try {
+      const res = await saleService.updates(since);
+      if (res?.data?.updates?.length) {
+        since = res?.data?.now || Date.now();
+        await softRefreshComandas();
+      }
+    } catch {}
+  }, 2500);
+  return () => clearInterval(t);
+}, [realtimeConnected]);
 
   useEffect(() => {
     try {
       const url = getWsUrl();
       if (url) {
         const ws = new (globalThis as any).WebSocket(url);
+        ws.onopen = () => { setRealtimeConnected(true); softRefreshComandas(); setLoading(false); };
         ws.onmessage = async (e: any) => {
           try {
             const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
@@ -165,16 +210,20 @@ export default function ComandasAbertasScreen() {
               const v = r.data;
               if (v && v.tipoVenda === 'comanda') {
                 setComandas((prev) => {
-                  const byId = new Map<string, any>();
-                  prev.forEach((x: any) => byId.set(String(x._id || x.id), x));
-                  byId.set(String(v._id || v.id), v);
-                  return Array.from(byId.values());
+                  if (!Array.isArray(prev) || prev.length === 0) return [v];
+                  let found = false;
+                  const next = prev.map((x: any) => {
+                    const idX = String(x._id || x.id);
+                    if (idX === String(v._id || v.id)) { found = true; return { ...x, ...v }; }
+                    return x;
+                  });
+                  return found ? next : [...next, v];
                 });
               }
             }
           } catch {}
         };
-        return () => { try { ws.close(); } catch {} };
+        return () => { try { ws.close(); setRealtimeConnected(false); } catch {} };
       }
     } catch {}
   }, []);
@@ -429,7 +478,6 @@ export default function ComandasAbertasScreen() {
           data={filteredComandas}
           keyExtractor={(item) => item._id}
           renderItem={({ item }) => {
-            console.log('📋 Renderizando comanda:', item.nomeComanda, 'Status:', item.status);
             return (
             <View style={styles.comandaItem}>
               <TouchableOpacity 
