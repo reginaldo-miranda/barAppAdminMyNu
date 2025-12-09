@@ -73,6 +73,7 @@ export default function TabletMode() {
     let alive = true;
     (async () => {
       try {
+        await AsyncStorage.setItem(STORAGE_KEYS.CLIENT_MODE, 'tablet');
         const existingToken = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
         if (!existingToken) {
           try {
@@ -94,8 +95,19 @@ export default function TabletMode() {
         // silencioso
       }
     })();
-    return () => { alive = false; };
+    return () => { alive = false; AsyncStorage.removeItem(STORAGE_KEYS.CLIENT_MODE).catch(() => {}); };
   }, []);
+
+  React.useEffect(() => {
+    (async () => {
+      try {
+        if (activeSetorId) {
+          const { setorImpressaoService } = await import('../src/services/api');
+          await setorImpressaoService.select(activeSetorId);
+        }
+      } catch {}
+    })();
+  }, [activeSetorId]);
 
   const onBack = () => {
     if (activeView !== 'setor') {
@@ -108,7 +120,7 @@ export default function TabletMode() {
   const marcarStatusEmLote = async (status: 'pronto' | 'entregue') => {
     if (!activeSetorId) return;
     try {
-      const resp = await apiService.request({ method: 'GET', url: `/setor-impressao-queue/${activeSetorId}/queue?status=${status === 'pronto' ? 'pendente' : 'pronto'}` });
+      const resp = await apiService.request({ method: 'GET', url: `/setor-impressao-queue/${activeSetorId}/queue?status=${status === 'pronto' ? 'pendente' : 'pronto'}&strict=1` });
       const itens = resp?.data?.data || [];
       for (const it of itens) {
         await apiService.request({ method: 'PATCH', url: `/setor-impressao-queue/sale/${it.saleId}/item/${it.id}/status`, data: { status } });
@@ -123,7 +135,7 @@ export default function TabletMode() {
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Confirmar', style: 'destructive', onPress: async () => {
         try {
-          const resp = await apiService.request({ method: 'GET', url: `/setor-impressao-queue/${activeSetorId}/queue?status=entregue` });
+          const resp = await apiService.request({ method: 'GET', url: `/setor-impressao-queue/${activeSetorId}/queue?status=entregue&strict=1` });
           const itens = resp?.data?.data || [];
           setHiddenDeliveredIds(itens.map((i: any) => Number(i.id)).filter(Boolean));
         } catch {}

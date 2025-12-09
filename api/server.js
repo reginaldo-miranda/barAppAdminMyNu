@@ -252,6 +252,9 @@ prisma.$connect()
     await prisma.$executeRawUnsafe(
       "ALTER TABLE `SaleItem` MODIFY COLUMN `status` VARCHAR(20) NOT NULL DEFAULT 'pendente';"
     );
+    await prisma.$executeRawUnsafe(
+      "ALTER TABLE `SaleItem` ADD COLUMN IF NOT EXISTS `origem` VARCHAR(20) NULL DEFAULT 'default';"
+    );
   } catch {}
 })();
 

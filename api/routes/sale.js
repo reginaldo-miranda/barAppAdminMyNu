@@ -159,7 +159,7 @@ const mapSaleResponse = (venda) => {
   if (!venda) return venda;
   const base = { ...venda, _id: String(venda.id), id: venda.id };
   // Mapear itens e produto
-  const itens = Array.isArray(venda.itens)
+    const itens = Array.isArray(venda.itens)
     ? venda.itens.map((item) => {
         const { product, ...restItem } = item;
         const produto = product
@@ -178,6 +178,7 @@ const mapSaleResponse = (venda) => {
           nomeProduto: restItem.nomeProduto || (produto ? produto.nome : restItem.nomeProduto),
           precoUnitario: Number(restItem.precoUnitario),
           subtotal: Number(restItem.subtotal),
+          origem: String(restItem.origem || 'default'),
         };
       })
     : venda.itens;
@@ -398,6 +399,8 @@ router.get('/:id', async (req, res) => {
     const prisma = getActivePrisma();
     const id = Number(req.params.id);
     const { produtoId, quantidade } = req.body;
+    const origemRaw = (req.body?.origem || req.headers['x-client-mode'] || '').toString().toLowerCase();
+    const origem = origemRaw === 'tablet' ? 'tablet' : 'default';
     console.log('[SALE] POST /:id/item', { id, produtoId, quantidade });
 
     if (!Number.isInteger(id) || id <= 0) {
@@ -425,7 +428,7 @@ router.get('/:id', async (req, res) => {
     }
 
     const itemExistente = Array.isArray(venda.itens) ? venda.itens.find((i) => Number(i.productId) === prodId) : null;
-    if (itemExistente) {
+    if (itemExistente && origem !== 'tablet') {
       const novaQtd = Number(itemExistente.quantidade || 0) + Number(quantidade || 1);
       await prisma.saleItem.update({
         where: { id: itemExistente.id },
@@ -445,7 +448,8 @@ router.get('/:id', async (req, res) => {
           precoUnitario: produto.precoVenda,
           subtotal: Number(quantidade || 1) * produto.precoVenda,
           status: 'pendente',
-          createdAt: new Date()
+          createdAt: new Date(),
+          origem
         },
       });
     }
@@ -511,7 +515,9 @@ router.delete('/:id/item/:produtoId', async (req, res) => {
     const prisma = getActivePrisma();
     const id = Number(req.params.id);
     const prodId = Number(req.params.produtoId);
-    console.log('[SALE] DELETE /:id/item/:produtoId', { id, produtoId: prodId });
+    const origemRaw = (req.body?.origem || req.headers['x-client-mode'] || '').toString().toLowerCase();
+    const origem = origemRaw === 'tablet' ? 'tablet' : 'default';
+    console.log('[SALE] DELETE /:id/item/:produtoId', { id, produtoId: prodId, origem });
     if (!Number.isInteger(id) || id <= 0) {
       return res.status(400).json({ error: 'Venda inválida' });
     }
@@ -528,7 +534,13 @@ router.delete('/:id/item/:produtoId', async (req, res) => {
       return res.status(400).json({ error: 'Não é possível remover itens de uma venda finalizada' });
     }
 
-    const item = venda.itens.find(i => i.productId === prodId);
+    let item = venda.itens.find(i => i.productId === prodId);
+    if (origem === 'tablet') {
+      const tabletItens = venda.itens.filter(i => i.productId === prodId && String(i.origem || '') === 'tablet');
+      if (tabletItens.length > 0) {
+        item = tabletItens.sort((a,b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()).pop();
+      }
+    }
     if (!item) {
       return res.status(404).json({ error: 'Item não encontrado na venda' });
     }
@@ -558,8 +570,10 @@ router.delete('/:id/item/:produtoId', async (req, res) => {
     const prisma = getActivePrisma();
     const id = Number(req.params.id);
     const prodId = Number(req.params.produtoId);
-    const { quantidade } = req.body;
-    console.log('[SALE] PUT /:id/item/:produtoId', { id, produtoId: prodId, quantidade });
+    const { quantidade, itemId } = req.body;
+    const origemRaw = (req.body?.origem || req.headers['x-client-mode'] || '').toString().toLowerCase();
+    const origem = origemRaw === 'tablet' ? 'tablet' : 'default';
+    console.log('[SALE] PUT /:id/item/:produtoId', { id, produtoId: prodId, quantidade, origem, itemId });
 
     if (!Number.isInteger(id) || id <= 0) {
       return res.status(400).json({ error: 'Venda inválida' });
@@ -581,7 +595,16 @@ router.delete('/:id/item/:produtoId', async (req, res) => {
       return res.status(400).json({ error: 'Não é possível alterar itens de uma venda finalizada' });
     }
 
-    const item = venda.itens.find(i => i.productId === prodId);
+    let item = venda.itens.find(i => i.productId === prodId);
+    if (origem === 'tablet') {
+      const tabletItens = venda.itens.filter(i => i.productId === prodId && String(i.origem || '') === 'tablet');
+      if (itemId) {
+        const byId = venda.itens.find(i => i.id === Number(itemId));
+        if (byId && byId.productId === prodId) item = byId;
+      } else if (tabletItens.length > 0) {
+        item = tabletItens.sort((a,b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()).pop();
+      }
+    }
     if (!item) {
       return res.status(404).json({ error: 'Item não encontrado na venda' });
     }

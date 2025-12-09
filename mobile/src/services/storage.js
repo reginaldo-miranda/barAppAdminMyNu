@@ -59,4 +59,5 @@ export const STORAGE_KEYS = {
   AUTH_TOKEN: 'authToken',
   API_TIMEOUT_MS: 'API_TIMEOUT_MS',
   DB_TARGET: 'DB_TARGET',
+  CLIENT_MODE: 'CLIENT_MODE',
 };

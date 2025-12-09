@@ -18,7 +18,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { SafeIcon } from '../../components/SafeIcon';
-import { productService, categoryService, typeService, unidadeMedidaService } from '../../src/services/api';
+import { productService, categoryService, typeService, unidadeMedidaService, setorImpressaoService } from '../../src/services/api';
 import { useAuth } from '../../src/contexts/AuthContext';
 import SearchAndFilter from '../../src/components/SearchAndFilter';
 import ScreenIdentifier from '../../src/components/ScreenIdentifier';
@@ -65,6 +65,12 @@ interface UnidadeMedida {
   ativo: boolean;
 }
 
+interface SetorImpressao {
+  id: string;
+  nome: string;
+  modoEnvio: 'impressora' | 'whatsapp';
+}
+
 export default function AdminProdutosScreen() {
   const { hasPermission } = useAuth() as any;
   const [products, setProducts] = useState<Product[]>([]);
@@ -81,6 +87,8 @@ export default function AdminProdutosScreen() {
   const [filterActive, setFilterActive] = useState<boolean | null>(null);
   const [dbTarget, setDbTarget] = useState('');
   const [apiHost, setApiHost] = useState('');
+  const [setores, setSetores] = useState<SetorImpressao[]>([]);
+  const [selectedSetores, setSelectedSetores] = useState<string[]>([]);
 
   // Filtros para o SearchAndFilter
   const categoryFilters = [
@@ -161,7 +169,8 @@ export default function AdminProdutosScreen() {
       loadProducts(),
       loadCategorias(),
       loadTipos(),
-      loadUnidades()
+      loadUnidades(),
+      loadSetores()
     ]);
   };
 
@@ -209,6 +218,16 @@ export default function AdminProdutosScreen() {
     }
   };
 
+  const loadSetores = async () => {
+    try {
+      const body = await setorImpressaoService.getAll();
+      const list = Array.isArray(body) ? body : (Array.isArray(body?.data) ? body.data : []);
+      const mapped: SetorImpressao[] = list.map((s: any) => ({ id: String(s.id ?? s._id), nome: s.nome, modoEnvio: String(s.modoEnvio || 'impressora') as any }));
+      setSetores(mapped);
+    } catch (error: any) {
+    }
+  };
+
   const handleSaveProduct = async () => {
     console.log('🔄 Iniciando salvamento do produto...');
     console.log('📋 Dados do formulário COMPLETOS:', JSON.stringify(formData, null, 2));
@@ -242,6 +261,7 @@ export default function AdminProdutosScreen() {
         ativo: formData.ativo,
         quantidade: parseInt(formData.quantidade) || 0,
         disponivel: formData.disponivel,
+        setoresImpressaoIds: selectedSetores.map((id) => Number(id))
       };
 
       console.log('📦 Dados do produto ANTES do envio:', JSON.stringify(productData, null, 2));
@@ -269,7 +289,7 @@ export default function AdminProdutosScreen() {
     }
   };
 
-  const handleEditProduct = (product: Product) => {
+  const handleEditProduct = async (product: Product) => {
     setFormData({
       nome: product.nome,
       descricao: product.descricao,
@@ -284,6 +304,12 @@ export default function AdminProdutosScreen() {
       disponivel: product.disponivel,
     });
     setEditingProduct(product);
+    setSelectedSetores([]);
+    try {
+      const resp = await productService.getById(product._id);
+      const sids = Array.isArray(resp?.data?.setoresImpressaoIds) ? resp.data.setoresImpressaoIds.map((n: any) => String(n)) : [];
+      setSelectedSetores(sids);
+    } catch {}
     setModalVisible(true);
   };
 
@@ -326,6 +352,7 @@ export default function AdminProdutosScreen() {
       disponivel: true,
     });
     setEditingProduct(null);
+    setSelectedSetores([]);
   };
 
   const getFilteredAndSortedProducts = () => {
@@ -800,6 +827,38 @@ export default function AdminProdutosScreen() {
                         })()}
                         </ScrollView>
                       </View>
+                    </View>
+                  </View>
+
+                  <View style={styles.formGroup}>
+                    <Text style={styles.label}>Setores de Impressão</Text>
+                    <View style={styles.selectContainer}>
+                      <ScrollView 
+                        horizontal 
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.categoryScrollContent}
+                      >
+                        {setores.map((s) => (
+                          <TouchableOpacity
+                            key={s.id}
+                            style={[
+                              styles.selectButton,
+                              selectedSetores.includes(String(s.id)) && styles.selectButtonActive
+                            ]}
+                            onPress={() => {
+                              const id = String(s.id);
+                              setSelectedSetores((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+                            }}
+                          >
+                            <Text style={[
+                              styles.selectButtonText,
+                              selectedSetores.includes(String(s.id)) && styles.selectButtonTextActive
+                            ]}>
+                              {s.nome}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
                     </View>
                   </View>
 

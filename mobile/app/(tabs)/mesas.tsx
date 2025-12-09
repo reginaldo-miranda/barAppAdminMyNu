@@ -11,6 +11,8 @@ import {
   ScrollView,
   ActivityIndicator,
   TextInput,
+  Dimensions,
+  Platform,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
@@ -126,6 +128,17 @@ export default function MesasScreen() {
   useEffect(() => {
     loadMesas();
     loadFuncionarios();
+  }, []);
+
+  useEffect(() => {
+    const w = Dimensions.get('window').width;
+    const shouldTablet = Platform.OS === 'web' || w >= 1024;
+    (async () => {
+      try {
+        if (shouldTablet) await AsyncStorage.setItem(STORAGE_KEYS.CLIENT_MODE, 'tablet');
+      } catch {}
+    })();
+    return () => { AsyncStorage.removeItem(STORAGE_KEYS.CLIENT_MODE).catch(() => {}); };
   }, []);
 
   // Garantir token de autenticação para operações protegidas

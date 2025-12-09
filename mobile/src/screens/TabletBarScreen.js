@@ -128,7 +128,7 @@ export default function TabletBarScreen(props = {}) {
       const dateParams = buildQueueParams(activeStatus, range, selectedEmployeeIds);
       const response = await apiService.request({
         method: 'GET',
-        url: `/setor-impressao-queue/${idSetor}/queue?status=${activeStatus}${dateParams}`,
+        url: `/setor-impressao-queue/${idSetor}/queue?status=${activeStatus}${dateParams}&strict=1`,
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
 

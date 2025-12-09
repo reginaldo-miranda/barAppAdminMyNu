@@ -12,7 +12,7 @@ const prisma = getActivePrisma();
 router.get('/:id/queue', async (req, res) => {
   try {
     const setorId = parseInt(req.params.id);
-    const { status = 'pendente', from, to, employees } = req.query;
+    const { status = 'pendente', from, to, employees, strict } = req.query;
     // Obter setor padrão (fallback) quando produto não estiver vinculado
     let defaultSetorId = null;
     try {
@@ -45,6 +45,8 @@ router.get('/:id/queue', async (req, res) => {
       }
     }
 
+    const isStrict = String(strict).toLowerCase() === '1' || String(strict).toLowerCase() === 'true';
+
     const sql = `
       SELECT 
         si.id,
@@ -75,19 +77,21 @@ router.get('/:id/queue', async (req, res) => {
       LEFT JOIN Employee pb ON pb.id = si.preparedById
       WHERE si.status = ?
         AND sa.status = 'aberta'
-        AND (
+        AND ${isStrict ? `(psi.setorId = ?)` : `(
           psi.setorId = ?
           OR (
             psi.setorId IS NULL
             AND ? IS NOT NULL
             AND ? = ?
           )
-        )
+        )`}
       ${extraFilters.join(' ')}
       ORDER BY si.createdAt ASC
     `;
 
-    const items = await prisma.$queryRawUnsafe(sql, status, setorId, defaultSetorId, defaultSetorId, setorId);
+    const items = isStrict
+      ? await prisma.$queryRawUnsafe(sql, status, setorId)
+      : await prisma.$queryRawUnsafe(sql, status, setorId, defaultSetorId, defaultSetorId, setorId);
 
     // Formatar os dados para exibição
     const formattedItems = items.map(item => {

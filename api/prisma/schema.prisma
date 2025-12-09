@@ -303,6 +303,7 @@ model SaleItem {
   precoUnitario Decimal  @db.Decimal(10, 2)
   subtotal      Decimal  @db.Decimal(10, 2)
   status        String   @default("pendente") @db.VarChar(20)
+  origem        String?  @default("default") @db.VarChar(20)
   createdAt     DateTime @default(now())
   preparedAt    DateTime?
   preparedById  Int?

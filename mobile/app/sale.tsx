@@ -57,6 +57,17 @@ export default function SaleScreen() {
   }, []);
 
   useEffect(() => {
+    const w = Dimensions.get('window').width;
+    const shouldTablet = Platform.OS === 'web' || w >= 1024;
+    (async () => {
+      try {
+        if (shouldTablet) await AsyncStorage.setItem(STORAGE_KEYS.CLIENT_MODE, 'tablet');
+      } catch {}
+    })();
+    return () => { AsyncStorage.removeItem(STORAGE_KEYS.CLIENT_MODE).catch(() => {}); };
+  }, []);
+
+  useEffect(() => {
     if (isPhone && !isViewMode && cart.length > 0 && !initialItemsModalShown) {
       setItemsModalVisible(true);
       setInitialItemsModalShown(true);
@@ -266,6 +277,10 @@ export default function SaleScreen() {
         produtoId: parseInt(String((product as any)?._id ?? (product as any)?.id ?? 0), 10),
         quantidade: 1
       };
+      const clientMode = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
+      if (String(clientMode).toLowerCase() === 'tablet') {
+        (itemData as any).origem = 'tablet';
+      }
       
       console.log('Adicionando item ao carrinho:', itemData);
       const response = await saleService.addItem(sale._id, itemData);
@@ -311,41 +326,37 @@ export default function SaleScreen() {
       // Fallback: adiciona localmente se o backend falhar
       console.log('Adicionando item localmente como fallback');
       
+      const clientMode = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
+      const isTabletMode = String(clientMode).toLowerCase() === 'tablet';
       setCart(prevCart => {
-        const existingItem = prevCart.find(item => 
-          item.produto && item.produto._id === product._id
-        );
-        
-        if (existingItem) {
-          // Se o item já existe, aumenta a quantidade
+        const exists = prevCart.find(item => item.produto && item.produto._id === product._id);
+        if (exists && !isTabletMode) {
           return prevCart.map(item => {
             if (item.produto && item.produto._id === product._id) {
               const newQuantity = item.quantidade + 1;
               return {
-                  ...item,
-                  quantidade: newQuantity,
-                  subtotal: ((item.precoUnitario ?? item.produto?.preco ?? 0) * newQuantity)
-                };
+                ...item,
+                quantidade: newQuantity,
+                subtotal: ((item.precoUnitario ?? item.produto?.preco ?? 0) * newQuantity)
+              };
             }
             return item;
           });
-        } else {
-          // Se é um item novo, adiciona ao carrinho
-          const newItem: CartItem = {
-            _id: `temp_${Date.now()}_${Math.random()}`,
-            productId: parseInt(String((product as any)?._id ?? (product as any)?.id ?? 0), 10),
-            produto: {
-              _id: product._id,
-              nome: product.nome,
-              preco: product.precoVenda
-            },
-            nomeProduto: product.nome,
-            quantidade: 1,
-            precoUnitario: product.precoVenda,
-            subtotal: product.precoVenda
-          };
-          return [...prevCart, newItem];
         }
+        const newItem: CartItem = {
+          _id: `temp_${Date.now()}_${Math.random()}`,
+          productId: parseInt(String((product as any)?._id ?? (product as any)?.id ?? 0), 10),
+          produto: {
+            _id: product._id,
+            nome: product.nome,
+            preco: product.precoVenda
+          },
+          nomeProduto: product.nome,
+          quantidade: 1,
+          precoUnitario: product.precoVenda,
+          subtotal: product.precoVenda
+        };
+        return [...prevCart, newItem];
       });
       
       // Mostra feedback visual de que o item foi adicionado
@@ -432,10 +443,11 @@ export default function SaleScreen() {
     // Snapshot do estado atual para possível reversão
     const prevCart = [...cart];
 
-    // UI otimista: refletir imediatamente
+    const clientMode = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
+    const isTabletMode = String(clientMode).toLowerCase() === 'tablet';
     if (clampedQty <= 0) {
       setCart(prev => prev.filter(cartItem => cartItem._id !== item._id));
-    } else {
+    } else if (!isTabletMode) {
       setCart(prev => prev.map(cartItem => {
         if (cartItem._id !== item._id) return cartItem;
         const unitPrice = cartItem.precoUnitario ?? cartItem.produto?.preco ?? (cartItem as any)?.produto?.precoVenda ?? 0;
@@ -450,29 +462,46 @@ export default function SaleScreen() {
     try {
       let response;
             if (isIncrement) {
-              const delta = Math.max(1, clampedQty - currentQty);
-              const payload = { produtoId: parseInt(String(produtoId), 10), quantidade: delta } as any;
-              console.log('[Sale] increment', { delta, payload });
-              if (tipo === 'comanda') {
-                response = await comandaService.addItem(sale._id, payload);
+              const clientMode = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
+              const isTabletMode = String(clientMode).toLowerCase() === 'tablet';
+              if (isTabletMode) {
+                const opts = { itemId: Number((item as any)?.id || (item as any)?._id) || undefined, origem: 'tablet' } as any;
+                if (tipo === 'comanda') {
+                  response = await comandaService.updateItemQuantity(sale._id, parseInt(String(produtoId), 10), clampedQty, opts);
+                } else {
+                  response = await saleService.updateItemQuantity(sale._id, parseInt(String(produtoId), 10), clampedQty, opts);
+                }
               } else {
-                response = await saleService.addItem(sale._id, payload);
+                const delta = Math.max(1, clampedQty - currentQty);
+                const payload = { produtoId: parseInt(String(produtoId), 10), quantidade: delta } as any;
+                console.log('[Sale] increment', { delta, payload });
+                if (tipo === 'comanda') {
+                  response = await comandaService.addItem(sale._id, payload);
+                } else {
+                  response = await saleService.addItem(sale._id, payload);
+                }
               }
             } else if (clampedQty <= 0) {
               // Remover item por completo via API (sem confirmação)
               console.log('[Sale] remove item', { produtoId });
+              const clientMode = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
+              const isTabletMode = String(clientMode).toLowerCase() === 'tablet';
+              const opts = isTabletMode ? { itemId: Number((item as any)?.id || (item as any)?._id) || undefined, origem: 'tablet' } : undefined;
               if (tipo === 'comanda') {
-                response = await comandaService.removeItem(sale._id, parseInt(String(produtoId), 10));
+                response = await comandaService.removeItem(sale._id, parseInt(String(produtoId), 10), opts);
               } else {
-                response = await saleService.removeItem(sale._id, parseInt(String(produtoId), 10));
+                response = await saleService.removeItem(sale._id, parseInt(String(produtoId), 10), opts);
               }
             } else if (isDecrement) {
               // Decremento: atualizar quantidade absoluta
               console.log('[Sale] decrement to', { quantidade: clampedQty });
+              const clientMode = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
+              const isTabletMode = String(clientMode).toLowerCase() === 'tablet';
+              const opts = isTabletMode ? { itemId: Number((item as any)?.id || (item as any)?._id) || undefined, origem: 'tablet' } : undefined;
               if (tipo === 'comanda') {
-                response = await comandaService.updateItemQuantity(sale._id, parseInt(String(produtoId), 10), clampedQty);
+                response = await comandaService.updateItemQuantity(sale._id, parseInt(String(produtoId), 10), clampedQty, opts);
               } else {
-                response = await saleService.updateItemQuantity(sale._id, parseInt(String(produtoId), 10), clampedQty);
+                response = await saleService.updateItemQuantity(sale._id, parseInt(String(produtoId), 10), clampedQty, opts);
               }
             } else {
         // Quantidade igual (nenhuma mudança) ou ajuste direto: sincronizar para garantir consistência

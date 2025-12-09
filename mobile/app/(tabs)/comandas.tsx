@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, FlatList, ActivityIndicator, Modal, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, FlatList, ActivityIndicator, Modal, Platform, Dimensions } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 
 import CriarComandaModal from '../../src/components/CriarComandaModal';
@@ -56,6 +56,17 @@ export default function ComandasAbertasScreen() {
 
   useEffect(() => {
     loadStatusFilters();
+  }, []);
+
+  useEffect(() => {
+    const w = Dimensions.get('window').width;
+    const shouldTablet = Platform.OS === 'web' || w >= 1024;
+    (async () => {
+      try {
+        if (shouldTablet) await AsyncStorage.setItem(STORAGE_KEYS.CLIENT_MODE, 'tablet');
+      } catch {}
+    })();
+    return () => { AsyncStorage.removeItem(STORAGE_KEYS.CLIENT_MODE).catch(() => {}); };
   }, []);
 
   useEffect(() => {

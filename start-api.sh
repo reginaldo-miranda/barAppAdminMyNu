@@ -68,7 +68,10 @@ if [ ! -d "node_modules" ]; then
 fi
 
 # Pular migrações para não tocar nos dados existentes
-echo "⏭️ Pulando migrações do Prisma (não alterar base de dados)"
+echo "🛠️ Aplicando schema do Prisma (db push)"
+npx prisma db push --accept-data-loss >/dev/null 2>&1 || true
+echo "🧩 Gerando Prisma Client"
+npx prisma generate >/dev/null 2>&1 || true
 
 :
 

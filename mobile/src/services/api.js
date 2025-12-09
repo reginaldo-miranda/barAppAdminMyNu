@@ -124,11 +124,6 @@ const ENV_BASE_URL = getEnvBaseUrl();
 // Segundo: override salvo em storage
 let initialBaseUrl = ENV_BASE_URL || resolveApiBaseUrl();
 
-// FORÇAR IP LOCAL PARA TESTES - base local MySQL
-if (!initialBaseUrl || initialBaseUrl.includes('localhost') || initialBaseUrl.includes('127.0.0.1')) {
-  initialBaseUrl = 'http://192.168.0.176:4000/api';
-}
-
 const DEFAULT_TIMEOUT_MS = 15000;
 
 const api = axios.create({
@@ -202,6 +197,11 @@ api.interceptors.request.use(
       const token = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
+      }
+
+      const clientMode = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
+      if (clientMode) {
+        config.headers['X-Client-Mode'] = clientMode;
       }
 
       const apiKey = await getSecureItem(STORAGE_KEYS.API_AUTH_KEY);
@@ -429,8 +429,8 @@ export const productService = {
   getAll: () => api.get('/product/list'),
   getById: (id) => api.get(`/product/${id}`),
   create: (data) => api.post('/product/create', data),
-  update: (id, data) => api.put(`/product/${id}`, data),
-  delete: (id) => api.delete(`/product/${id}`),
+  update: (id, data) => api.put(`/product/update/${id}`, data),
+  delete: (id) => api.delete(`/product/delete/${id}`),
   getUsedCategories: () => api.get('/product/categories/used'),
   getUsedTypes: () => api.get('/product/types/used'),
   getUsedGroups: () => api.get('/product/groups/used'),
@@ -528,8 +528,20 @@ export const printerService = {
 export const saleService = {
   create: (data) => api.post('/sale/create', data),
   addItem: (id, item) => api.post(`/sale/${id}/item`, item),
-  removeItem: (id, produtoId) => api.delete(`/sale/${id}/item/${produtoId}`),
-  updateItemQuantity: (id, produtoId, quantidade) => api.put(`/sale/${id}/item/${produtoId}`, { quantidade }),
+  removeItem: (id, produtoId, opts) => {
+    const config = opts && (opts.itemId || opts.origem)
+      ? { data: { itemId: opts.itemId, origem: opts.origem } }
+      : undefined;
+    return api.delete(`/sale/${id}/item/${produtoId}`, config);
+  },
+  updateItemQuantity: (id, produtoId, quantidade, opts) => {
+    const body = { quantidade };
+    if (opts && (opts.itemId || opts.origem)) {
+      if (opts.itemId) body.itemId = opts.itemId;
+      if (opts.origem) body.origem = opts.origem;
+    }
+    return api.put(`/sale/${id}/item/${produtoId}`, body);
+  },
   finalize: (id, payload) => {
     const body = typeof payload === 'string'
       ? { formaPagamento: payload }
@@ -568,9 +580,9 @@ export const comandaService = {
   // Adicionar item na comanda (mapeia para rota de venda)
   addItem: (id, item) => saleService.addItem(id, item),
   // Remover item da comanda (mapeia para rota de venda)
-  removeItem: (id, produtoId) => saleService.removeItem(id, produtoId),
+  removeItem: (id, produtoId, opts) => saleService.removeItem(id, produtoId, opts),
   // Atualizar quantidade de item na comanda
-  updateItemQuantity: (id, produtoId, quantidade) => api.put(`/sale/${id}/item/${produtoId}`, { quantidade }),
+  updateItemQuantity: (id, produtoId, quantidade, opts) => saleService.updateItemQuantity(id, produtoId, quantidade, opts),
   // Finalizar/fechar comanda (reaproveita a mesma rota de finalizar venda)
   finalize: (id, payload) => saleService.finalize(id, payload),
   // Fechar comanda com pagamento padrão 'dinheiro'
