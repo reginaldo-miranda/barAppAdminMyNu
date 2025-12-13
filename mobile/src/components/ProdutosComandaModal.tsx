@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { productService, comandaService, categoryService } from '../services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { STORAGE_KEYS } from '../services/storage';
 import SearchAndFilter from './SearchAndFilter';
 interface Categoria {
   id: string;
@@ -228,11 +230,21 @@ export default function ProdutosComandaModal({ visible, onClose, comanda, onUpda
     const itemData = {
       produtoId: produto._id,
       quantidade: quantidade || 1
-    };
+    } as any;
+    try {
+      const cm = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
+      if (String(cm).toLowerCase() === 'tablet') itemData.origem = 'tablet';
+    } catch {}
     
     try {
       await comandaService.addItem(comanda._id, itemData);
       Alert.alert('Sucesso', `${produto.nome} adicionado à comanda!`);
+      try {
+        const cm = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
+        if (String(cm).toLowerCase() === 'tablet') {
+          Alert.alert('Modo tablet', 'Pedido adicionado como novo registro (linha independente).');
+        }
+      } catch {}
       onUpdateComanda();
     } catch (error) {
       console.error('Erro ao adicionar item:', error);
@@ -288,8 +300,19 @@ export default function ProdutosComandaModal({ visible, onClose, comanda, onUpda
     setLoadingItems(prev => new Set(prev).add(produtoId));
 
     try {
-      await comandaService.updateItemQuantity(comanda._id, produtoId, qtyAtual + 1);
+      const payload: any = { produtoId, quantidade: 1 };
+      try {
+        const cm = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
+        if (String(cm).toLowerCase() === 'tablet') payload.origem = 'tablet';
+      } catch {}
+      await comandaService.addItem(comanda._id, payload);
       onUpdateComanda?.();
+      try {
+        const cm = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
+        if (String(cm).toLowerCase() === 'tablet') {
+          Alert.alert('Modo tablet', 'Novo registro criado (linha independente).');
+        }
+      } catch {}
     } catch (error) {
       console.error('Erro ao incrementar quantidade do item:', error);
       Alert.alert('Erro', 'Não foi possível atualizar o item. Sincronizando comanda...');

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -289,6 +290,7 @@ export default function SaleScreen() {
       setSale(response.data);
       setCart(response.data.itens || []);
       Alert.alert('Sucesso', `${product.nome} foi adicionado ao carrinho!`);
+      
 
       try {
         const whatsTargets = Array.isArray(response?.data?.whatsTargets) ? response.data.whatsTargets : [];
@@ -464,22 +466,11 @@ export default function SaleScreen() {
             if (isIncrement) {
               const clientMode = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
               const isTabletMode = String(clientMode).toLowerCase() === 'tablet';
-              if (isTabletMode) {
-                const opts = { itemId: Number((item as any)?.id || (item as any)?._id) || undefined, origem: 'tablet' } as any;
-                if (tipo === 'comanda') {
-                  response = await comandaService.updateItemQuantity(sale._id, parseInt(String(produtoId), 10), clampedQty, opts);
-                } else {
-                  response = await saleService.updateItemQuantity(sale._id, parseInt(String(produtoId), 10), clampedQty, opts);
-                }
+              const opts = isTabletMode ? { itemId: Number((item as any)?.id || (item as any)?._id) || undefined, origem: 'tablet' } : undefined;
+              if (tipo === 'comanda') {
+                response = await comandaService.updateItemQuantity(sale._id, parseInt(String(produtoId), 10), clampedQty, opts);
               } else {
-                const delta = Math.max(1, clampedQty - currentQty);
-                const payload = { produtoId: parseInt(String(produtoId), 10), quantidade: delta } as any;
-                console.log('[Sale] increment', { delta, payload });
-                if (tipo === 'comanda') {
-                  response = await comandaService.addItem(sale._id, payload);
-                } else {
-                  response = await saleService.addItem(sale._id, payload);
-                }
+                response = await saleService.updateItemQuantity(sale._id, parseInt(String(produtoId), 10), clampedQty, opts);
               }
             } else if (clampedQty <= 0) {
               // Remover item por completo via API (sem confirmação)
@@ -530,28 +521,13 @@ export default function SaleScreen() {
           return String(id) === String(produtoId) || String(ci?._id) === String(item?._id);
         });
         const updatedQty = Math.max(0, Math.floor(Number(updated?.quantidade) || 0));
-        if (updated && updatedQty !== clampedQty) {
+        if (!updated || updatedQty !== clampedQty) {
           try {
-            let fallback;
-                  if (isIncrement) {
-                    const delta = Math.max(1, clampedQty - updatedQty);
-                    const payload = { produtoId: parseInt(String(produtoId), 10), quantidade: delta } as any;
-                    fallback = tipo === 'comanda'
-                      ? await comandaService.addItem(sale._id, payload)
-                      : await saleService.addItem(sale._id, payload);
-                  } else if (clampedQty <= 0) {
-                    fallback = tipo === 'comanda'
-                      ? await comandaService.removeItem(sale._id, parseInt(String(produtoId), 10))
-                      : await saleService.removeItem(sale._id, parseInt(String(produtoId), 10));
-                  } else if (isDecrement) {
-                    fallback = tipo === 'comanda'
-                      ? await comandaService.updateItemQuantity(sale._id, parseInt(String(produtoId), 10), clampedQty)
-                      : await saleService.updateItemQuantity(sale._id, parseInt(String(produtoId), 10), clampedQty);
-                  }
-            if (fallback?.data) {
-              setSale(fallback.data);
-              setCart(fallback.data.itens || []);
-            }
+            const refreshed = tipo === 'comanda'
+              ? await comandaService.getById(sale._id)
+              : await saleService.getById(sale._id);
+            setSale(refreshed.data);
+            setCart(refreshed.data.itens || []);
           } catch {}
         }
       }
@@ -1027,3 +1003,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+

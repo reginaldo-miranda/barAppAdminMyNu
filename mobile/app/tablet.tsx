@@ -114,7 +114,7 @@ export default function TabletMode() {
       setActiveView('setor');
       return;
     }
-    try { router.back(); } catch { try { router.replace('/'); } catch {} }
+    try { router.back(); } catch {}
   };
 
   const marcarStatusEmLote = async (status: 'pronto' | 'entregue') => {

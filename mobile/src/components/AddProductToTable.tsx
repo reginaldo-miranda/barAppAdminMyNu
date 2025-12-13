@@ -209,6 +209,8 @@ const AddProductToTable: React.FC<AddProductToTableProps> = ({
     setFilteredProducts(filtered);
   };
 
+  const [addingId, setAddingId] = useState<string | number | null>(null);
+
   const handleProductSelect = (product: Product) => {
     console.log('🟢 Produto selecionado:', product.nome);
     
@@ -218,7 +220,11 @@ const AddProductToTable: React.FC<AddProductToTableProps> = ({
     }
     
     try {
+      const pid = (product as any)?._id ?? (product as any)?.id ?? String(product?.nome || 'p');
+      if (addingId && String(addingId) === String(pid)) return;
+      setAddingId(pid);
       onAddProduct(product);
+      setTimeout(() => setAddingId(null), 300);
       console.log('✅ Produto adicionado com sucesso');
     } catch (error) {
       console.error('❌ Erro ao adicionar produto:', error);

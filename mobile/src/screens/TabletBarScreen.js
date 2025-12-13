@@ -126,18 +126,45 @@ export default function TabletBarScreen(props = {}) {
       const activeStatus = statusOverride || (forceFilterStatus || filterStatus);
       const range = computeDateRange(datePreset, customFrom, customTo);
       const dateParams = buildQueueParams(activeStatus, range, selectedEmployeeIds);
-      const response = await apiService.request({
+      let response = await apiService.request({
         method: 'GET',
         url: `/setor-impressao-queue/${idSetor}/queue?status=${activeStatus}${dateParams}&strict=1`,
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
 
       if (response.data?.success) {
-        const arr = response.data.data || [];
+        let arr = response.data.data || [];
+        if (arr.length === 0) {
+          try {
+            const respCompat = await apiService.request({
+              method: 'GET',
+              url: `/setor-impressao-queue/${idSetor}/queue?status=${activeStatus}${dateParams}`,
+              headers: token ? { Authorization: `Bearer ${token}` } : {}
+            });
+            const arr2 = respCompat?.data?.data || [];
+            if (arr2.length > 0) {
+              arr = arr2;
+              setFeedbackMsg({ type: 'success', text: 'Exibindo itens sem vínculo de setor (compatibilidade). Cadastre o setor nos produtos.' });
+            } else {
+              setFeedbackMsg({ type: null, text: '' });
+            }
+          } catch {
+            setFeedbackMsg({ type: null, text: '' });
+          }
+        } else {
+          setFeedbackMsg({ type: null, text: '' });
+        }
         setRawItems(arr);
         const base = Array.isArray(hiddenIds) && hiddenIds.length > 0 ? arr.filter((i) => !hiddenIds.includes(Number(i.id))) : arr;
-        console.log('[ENTREGUES FILTRO][BAR][SERVER]', { status: activeStatus, range, employeeIds: selectedEmployeeIds, rawCount: arr.length, showCount: base.length });
-        setItems(base);
+        const expanded = [];
+        for (const it of base) {
+          const qty = Math.max(1, Math.floor(Number(it?.quantidade || 1)));
+          for (let k = 0; k < qty; k++) {
+            expanded.push({ ...it, quantidade: 1, displayQty: 1, realId: it.id, _key: `${it.id}-${k}` });
+          }
+        }
+        console.log('[ENTREGUES FILTRO][BAR][SERVER]', { status: activeStatus, range, employeeIds: selectedEmployeeIds, rawCount: arr.length, showCount: expanded.length });
+        setItems(expanded);
       }
     } catch (error) {
       console.error('Erro ao buscar itens:', error);
@@ -174,7 +201,7 @@ export default function TabletBarScreen(props = {}) {
       Vibration.vibrate(100);
       const response = await apiService.request({
         method: 'PATCH',
-        url: `/setor-impressao-queue/sale/${item.saleId}/item/${item.id}/status`,
+        url: `/setor-impressao-queue/sale/${item.saleId}/item/${(item.realId || item.id)}/status`,
         data: { status: novoStatus },
         headers: existingToken ? { Authorization: `Bearer ${existingToken}` } : {}
       });
@@ -285,12 +312,15 @@ export default function TabletBarScreen(props = {}) {
     const waiting = getWaitingMinutes(item.horario);
     const urgencyStyle = waiting >= 20 ? styles.urgentHigh : waiting >= 10 ? styles.urgentMedium : waiting >= 5 ? styles.urgentLow : null;
     const timeStr = new Date(item.horario).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false });
+    const rawMesa = String(item?.mesa || '');
+    const isComanda = /comanda/i.test(rawMesa) || String(item?.tipo || '').toLowerCase() === 'comanda';
+    const displayName = rawMesa.replace(/^\s*(comanda|mesa)\s*:?\s*/i, '').trim();
     return (
       <Animated.View style={[styles.itemContainer, urgencyStyle, { opacity: fadeAnim }]}> 
         <View style={styles.itemInfo}>
           <View style={styles.itemTopRow}>
             <Text style={styles.itemTitle}>
-              {item.quantidade}x {item.produto}
+              {Number(item?.displayQty || 1)}x {item.produto}
             </Text>
             <View style={styles.itemMeta}>
               <Ionicons name="time" size={16} color="#333" />
@@ -309,7 +339,7 @@ export default function TabletBarScreen(props = {}) {
               {item.status === 'pendente' ? 'Em preparação' : item.status === 'pronto' ? 'Pronto' : 'Entregue'}
             </Text>
           </View>
-          <Text style={styles.itemDetail}>Mesa/Comanda: {item.mesa}</Text>
+          <Text style={styles.itemDetail}>{isComanda ? 'Comanda' : 'Mesa'}: {displayName || rawMesa}</Text>
           <Text style={styles.itemDetail}>Responsável: {item.responsavel || 'Não informado'}</Text>
           <Text style={styles.itemDetail}>Funcionário: {item.funcionario}</Text>
           <Text style={styles.itemDetail}>Horário: {timeStr}</Text>
@@ -324,8 +354,8 @@ export default function TabletBarScreen(props = {}) {
             style={[styles.checkbox, { borderColor: '#9E9E9E', opacity: submittingId === item.id ? 0.6 : 1 }]}
             onPress={() => {
               try {
-                console.log('Entregar clique (bar)', { id: item.id, saleId: item.saleId, status: item.status });
-                if (!item?.id || !item?.saleId) {
+                console.log('Entregar clique (bar)', { id: item.realId || item.id, saleId: item.saleId, status: item.status });
+                if (!(item?.realId || item?.id) || !item?.saleId) {
                   Alert.alert('Erro', 'Item inválido para entrega');
                   return;
                 }
@@ -362,8 +392,9 @@ export default function TabletBarScreen(props = {}) {
         <FlatList
           data={mesaItems}
           renderItem={renderItem}
-          keyExtractor={(item) => item.id.toString()}
-          scrollEnabled={false}
+          keyExtractor={(item, idx) => String(item?._key || `${item.id}-${idx}`)}
+          scrollEnabled={true}
+          nestedScrollEnabled={true}
         />
       </View>
     );
@@ -458,28 +489,18 @@ export default function TabletBarScreen(props = {}) {
           <Text style={styles.noResultsBanner}>Nenhum item encontrado com os filtros selecionados</Text>
         )}
       </View>
-      {!forceFilterStatus && (
-      <View style={styles.filtersRow}>
-        <TouchableOpacity onPress={() => { setFilterStatus('pendente'); }} style={[styles.filterChip, filterStatus === 'pendente' && styles.filterChipActive]}>
-          <Text style={[styles.filterText, filterStatus === 'pendente' && styles.filterTextActive]}>Em preparação</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => { setFilterStatus('pronto'); }} style={[styles.filterChip, filterStatus === 'pronto' && styles.filterChipActive]}>
-          <Text style={[styles.filterText, filterStatus === 'pronto' && styles.filterTextActive]}>Prontos</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => { setFilterStatus('entregue'); }} style={[styles.filterChip, filterStatus === 'entregue' && styles.filterChipActive]}>
-          <Text style={[styles.filterText, filterStatus === 'entregue' && styles.filterTextActive]}>Entregues</Text>
-        </TouchableOpacity>
-      </View>
-      )}
+      
       
       
       
       <View style={[styles.deliveriesArea, { minHeight: screenHeight * 0.7 }]}>
       <FlatList
-        data={[...items].sort((a, b) => new Date(a.horario).getTime() - new Date(b.horario).getTime())}
-        renderItem={renderItem}
-        keyExtractor={(item) => String(item.id)}
-        contentContainerStyle={styles.listContainer}
+          style={styles.mainList}
+          data={[...items].sort((a, b) => new Date(a.horario).getTime() - new Date(b.horario).getTime())}
+          renderItem={renderItem}
+          keyExtractor={(item, idx) => String(item?._key || `${item.id}-${idx}`)}
+          contentContainerStyle={styles.listContainer}
+        scrollEnabled={true}
         showsVerticalScrollIndicator
         initialNumToRender={12}
         windowSize={10}
@@ -553,7 +574,8 @@ const styles = StyleSheet.create({
   employeeChipText: { fontSize: 12, color: '#333', fontWeight: '600' },
   employeeChipTextActive: { color: '#2e7d32' },
   employeeChipCount: { fontSize: 12, color: '#666', marginLeft: 6 },
-  deliveriesArea: { flexGrow: 1 },
+  deliveriesArea: { flex: 1 },
+  mainList: { flex: 1 },
   printButton: {
     backgroundColor: '#2196F3',
     flexDirection: 'row',
