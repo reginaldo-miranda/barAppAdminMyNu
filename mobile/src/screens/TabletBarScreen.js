@@ -155,7 +155,20 @@ export default function TabletBarScreen(props = {}) {
           setFeedbackMsg({ type: null, text: '' });
         }
         setRawItems(arr);
-        const base = Array.isArray(hiddenIds) && hiddenIds.length > 0 ? arr.filter((i) => !hiddenIds.includes(Number(i.id))) : arr;
+        let base = Array.isArray(hiddenIds) && hiddenIds.length > 0 ? arr.filter((i) => !hiddenIds.includes(Number(i.id))) : arr;
+        if (Array.isArray(selectedEmployeeIds) && selectedEmployeeIds.length > 0) {
+          const empSet = new Set(selectedEmployeeIds.map((v) => Number(v)));
+          const nameSet = new Set(selectedEmployeeIds.map((id) => {
+            const emp = employees.find((e) => Number(e.id) === Number(id));
+            return String(emp?.nome || '').trim().toLowerCase();
+          }).filter(Boolean));
+          base = base.filter((it) => {
+            const byId = empSet.has(Number(it?.preparedById)) || empSet.has(Number(it?.funcionarioId)) || empSet.has(Number(it?.employeeId));
+            const nome = String(it?.funcionario || it?.preparadoPor || it?.responsavel || it?.employeeName || '').trim().toLowerCase();
+            const byName = nome && nameSet.has(nome);
+            return byId || byName;
+          });
+        }
         const expanded = [];
         for (const it of base) {
           const qty = Math.max(1, Math.floor(Number(it?.quantidade || 1)));
@@ -207,7 +220,8 @@ export default function TabletBarScreen(props = {}) {
       });
       if (response?.success && response.data?.success) {
         notificarSucesso();
-        setItems(prevItems => prevItems.filter(i => i.id !== item.id));
+        const targetKey = String(item?._key || `${item.id}`);
+        setItems(prevItems => prevItems.filter(i => String(i?._key || `${i.id}`) !== targetKey));
         Alert.alert('Sucesso', novoStatus === 'pronto' ? 'Item marcado como pronto' : 'Item marcado como entregue');
         setFeedbackMsg({ type: 'success', text: novoStatus === 'pronto' ? 'Item marcado como pronto' : 'Item marcado como entregue' });
         buscarItensDoSetor(setorId);
@@ -296,7 +310,7 @@ export default function TabletBarScreen(props = {}) {
     if (id) {
       buscarItensDoSetor(id);
     }
-    if ((forceFilterStatus || filterStatus) === 'entregue') {
+    if ((forceFilterStatus || filterStatus) === 'entregue' || employees.length === 0) {
       carregarFuncionarios();
     }
   }, [setorId, setorIdOverride, filterStatus, forceFilterStatus, hiddenIds, datePreset, customFrom, customTo, selectedEmployeeIds, carregarFuncionarios]);
@@ -454,6 +468,22 @@ export default function TabletBarScreen(props = {}) {
             <TouchableOpacity onPress={() => { setFilterStatus('entregue'); if (setorId) buscarItensDoSetor(setorId, 'entregue'); }} style={[styles.filterChip, filterStatus === 'entregue' && styles.filterChipActive]}>
               <Text style={[styles.filterText, filterStatus === 'entregue' && styles.filterTextActive]}>Entregues</Text>
             </TouchableOpacity>
+          </View>
+        )}
+        {((forceFilterStatus || filterStatus) !== 'entregue') && (
+          <View style={styles.compactFiltersArea}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalRow}>
+              {employees.map((e) => {
+                const checked = selectedEmployeeIds.includes(e.id);
+                const count = items.filter(i => (Number(i.preparedById) === Number(e.id) || Number(i.funcionarioId) === Number(e.id))).length;
+                return (
+                  <TouchableOpacity key={e.id} style={[styles.employeeChip, checked && styles.employeeChipActive]} onPress={() => { setSelectedEmployeeIds((prev)=> checked ? prev.filter(id=>id!==e.id) : [...prev, e.id]); if (setorId) buscarItensDoSetor(setorId); }}>
+                    <Text style={[styles.employeeChipText, checked && styles.employeeChipTextActive]}>{e.nome}</Text>
+                    <Text style={[styles.employeeChipCount, checked && styles.employeeChipTextActive]}>{count}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           </View>
         )}
         {feedbackMsg.text ? (
