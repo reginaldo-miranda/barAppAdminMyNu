@@ -26,6 +26,7 @@ export default function TabletCozinhaScreen(props = {}) {
   const [employees, setEmployees] = useState([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([]);
   const [employeeSearch, setEmployeeSearch] = useState('');
+  const [setores, setSetores] = useState([]);
   const [showCustomDateModal, setShowCustomDateModal] = useState(false);
 
   const ensureToken = useCallback(async () => {
@@ -156,6 +157,14 @@ export default function TabletCozinhaScreen(props = {}) {
       const resp = await apiService.request({ method: 'GET', url: '/employee/list', headers: token ? { Authorization: `Bearer ${token}` } : {} });
       const arr = Array.isArray(resp?.data) ? resp.data : Array.isArray(resp?.data?.data) ? resp.data.data : [];
       setEmployees(arr);
+    } catch {}
+  }, []);
+
+  const carregarSetores = useCallback(async () => {
+    try {
+      const response = await apiService.request({ method: 'GET', url: '/setor-impressao/list' });
+      const arr = Array.isArray(response?.data?.data) ? response.data.data : [];
+      setSetores(arr);
     } catch {}
   }, []);
 
@@ -355,6 +364,9 @@ export default function TabletCozinhaScreen(props = {}) {
     if ((forceFilterStatus || filterStatus) === 'entregue' || employees.length === 0) {
       carregarFuncionarios();
     }
+    if ((forceFilterStatus || filterStatus) === 'entregue' && setores.length === 0) {
+      carregarSetores();
+    }
   }, [setorId, setorIdOverride, filterStatus, forceFilterStatus, hiddenIds, datePreset, customFrom, customTo, selectedEmployeeIds, carregarFuncionarios]);
 
   const mesasAgrupadas = agruparPorMesa(items);
@@ -510,16 +522,23 @@ export default function TabletCozinhaScreen(props = {}) {
             {feedbackMsg.text}
           </Text>
         ) : null}
-        {(forceFilterStatus === 'entregue' || filterStatus === 'entregue') && (
-          <View style={styles.compactFiltersArea}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalRow}>
-              {['hoje','semana','mes','custom'].map((p) => (
-                <TouchableOpacity key={p} onPress={() => { setDatePreset(p); if (setorId) buscarItensDoSetor(setorId); }} style={[styles.filterChipSm, datePreset === p && styles.filterChipSmActive]}>
-                  <Text style={[styles.filterTextSm, datePreset === p && styles.filterTextSmActive]}>
-                    {p === 'hoje' ? 'Hoje' : p === 'semana' ? 'Semana' : p === 'mes' ? 'Mês' : 'Pers.'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+      {(forceFilterStatus === 'entregue' || filterStatus === 'entregue') && (
+        <View style={styles.compactFiltersArea}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalRow}>
+            {setores.map((s) => (
+              <TouchableOpacity key={s.id} onPress={() => { setSetorId(s.id); setSetorNome(s.nome); buscarItensDoSetor(s.id); }} style={[styles.filterChipSm, Number(setorId) === Number(s.id) && styles.filterChipSmActive]}>
+                <Text style={[styles.filterTextSm, Number(setorId) === Number(s.id) && styles.filterTextSmActive]}>
+                  {s.nome.toLowerCase().includes('bar') ? 'bar' : s.nome.toLowerCase().includes('cozinha') ? 'cozinha' : s.nome.toLowerCase().includes('chapa') ? 'chapa' : s.nome}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            {['hoje','semana','mes','custom'].map((p) => (
+              <TouchableOpacity key={p} onPress={() => { setDatePreset(p); if (setorId) buscarItensDoSetor(setorId); }} style={[styles.filterChipSm, datePreset === p && styles.filterChipSmActive]}>
+                <Text style={[styles.filterTextSm, datePreset === p && styles.filterTextSmActive]}>
+                  {p === 'hoje' ? 'Hoje' : p === 'semana' ? 'Semana' : p === 'mes' ? 'Mês' : 'Pers.'}
+                </Text>
+              </TouchableOpacity>
+            ))}
               {employees.map((e) => {
                 const checked = selectedEmployeeIds.includes(e.id);
                 const count = items.filter(i => i.status==='entregue' && (Number(i.preparedById) === Number(e.id) || Number(i.funcionarioId) === Number(e.id))).length;

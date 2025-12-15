@@ -26,6 +26,7 @@ export default function TabletBarScreen(props = {}) {
   const [employees, setEmployees] = useState([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([]);
   const [employeeSearch, setEmployeeSearch] = useState('');
+  const [setores, setSetores] = useState([]);
 
   const ensureToken = React.useCallback(async () => {
     try {
@@ -115,6 +116,14 @@ export default function TabletBarScreen(props = {}) {
       return null;
     }
   };
+
+  const carregarSetores = React.useCallback(async () => {
+    try {
+      const response = await apiService.request({ method: 'GET', url: '/setor-impressao/list' });
+      const arr = Array.isArray(response?.data?.data) ? response.data.data : [];
+      setSetores(arr);
+    } catch {}
+  }, []);
 
   // Buscar itens do setor
   const buscarItensDoSetor = async (idSetor, statusOverride) => {
@@ -313,6 +322,9 @@ export default function TabletBarScreen(props = {}) {
     if ((forceFilterStatus || filterStatus) === 'entregue' || employees.length === 0) {
       carregarFuncionarios();
     }
+    if ((forceFilterStatus || filterStatus) === 'entregue' && setores.length === 0) {
+      carregarSetores();
+    }
   }, [setorId, setorIdOverride, filterStatus, forceFilterStatus, hiddenIds, datePreset, customFrom, customTo, selectedEmployeeIds, carregarFuncionarios]);
 
   const mesasAgrupadas = agruparPorMesa(items);
@@ -494,6 +506,13 @@ export default function TabletBarScreen(props = {}) {
         {(forceFilterStatus === 'entregue' || filterStatus === 'entregue') && (
           <View style={styles.compactFiltersArea}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalRow}>
+              {setores.map((s) => (
+                <TouchableOpacity key={s.id} onPress={() => { setSetorId(s.id); setSetorNome(s.nome); buscarItensDoSetor(s.id); }} style={[styles.filterChipSm, Number(setorId) === Number(s.id) && styles.filterChipSmActive]}>
+                  <Text style={[styles.filterTextSm, Number(setorId) === Number(s.id) && styles.filterTextSmActive]}>
+                    {s.nome.toLowerCase().includes('bar') ? 'bar' : s.nome.toLowerCase().includes('cozinha') ? 'cozinha' : s.nome.toLowerCase().includes('chapa') ? 'chapa' : s.nome}
+                  </Text>
+                </TouchableOpacity>
+              ))}
               {['hoje','semana','mes','custom'].map((p) => (
                 <TouchableOpacity key={p} onPress={() => { setDatePreset(p); if (setorId) buscarItensDoSetor(setorId); }} style={[styles.filterChipSm, datePreset === p && styles.filterChipSmActive]}>
                   <Text style={[styles.filterTextSm, datePreset === p && styles.filterTextSmActive]}>

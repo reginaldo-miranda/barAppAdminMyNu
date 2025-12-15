@@ -977,44 +977,11 @@ useEffect(() => {
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.actionButton, styles.viewButton]}
-                  onPress={() => verComanda(item)}
-                >
-                  <SafeIcon name="eye" size={12} color="#fff" fallbackText="👁" />
-                  <Text style={styles.actionButtonText}>Ver</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.actionButton, styles.cashButton]}
-                  onPress={() => {
-                    console.log('💵 ÍCONE CAIXA CLICADO');
-                    console.log('Mesa selecionada:', item);
-                    try {
-                      fecharModalFecharMesa(item);
-                      console.log('✅ Modal de fechamento aberto via ícone Caixa');
-                    } catch (error) {
-                      console.error('❌ ERRO ao abrir modal via ícone Caixa:', error);
-                    }
-                  }}
-                >
-                  <SafeIcon name="cash" size={12} color="#fff" fallbackText="R$" />
-                  <Text style={styles.actionButtonText}>Caixa</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
                   style={[styles.actionButton, styles.closeButton]}
                   onPress={() => {
-                    console.log('🟣🟣🟣 BOTÃO FECHAR MESA CLICADO! 🟣🟣🟣');
-                    console.log('Mesa selecionada:', item);
-                    console.log('Status da mesa:', item.status);
-                    console.log('ID da mesa:', item._id);
-                    console.log('Chamando fecharModalFecharMesa...');
                     try {
                       fecharModalFecharMesa(item);
-                      console.log('✅ fecharModalFecharMesa chamada com sucesso!');
-                    } catch (error) {
-                      console.error('❌ ERRO ao chamar fecharModalFecharMesa:', error);
-                    }
+                    } catch (error) {}
                   }}
                 >
                   <SafeIcon name="close-circle" size={12} color="#fff" fallbackText="×" />
@@ -1033,15 +1000,7 @@ useEffect(() => {
                 </TouchableOpacity>
             )}
 
-            {item.status !== 'manutencao' && (
-              <TouchableOpacity
-                style={[styles.actionButton, { backgroundColor: '#9E9E9E' }]}
-                onPress={() => colocarEmManutencao(item)}
-              >
-                <SafeIcon name="construct" size={12} color="#fff" fallbackText="🔧" />
-                <Text style={styles.actionButtonText}>Manutenção</Text>
-              </TouchableOpacity>
-            )}
+            
           </View>
         </View>
       </View>

@@ -192,7 +192,7 @@ export default function TabletMode() {
         </View>
       </View>
 
-      {activeView === 'setor' && (
+      {(activeView === 'setor' || activeView === 'entregue' || activeView === 'pronto') && (
       <View style={styles.tabContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsContent}>
           {setores.map((s) => {
