@@ -18,27 +18,28 @@ const buildDatabaseUrl = (target) => {
   return envDefault || envLocal || envRailway;
 };
 
-// Determinar URLs e instanciar clientes dedicados
 const urlLocal = buildDatabaseUrl("local");
+const urlRailway = buildDatabaseUrl("railway");
 const prismaLocal = new PrismaClient({ datasources: { db: { url: urlLocal } } });
+const prismaRailway = new PrismaClient({ datasources: { db: { url: urlRailway } } });
 
-// Selecionar cliente inicial com base no DB_TARGET
-let prisma = prismaLocal;
-process.env.DB_TARGET = 'local';
-process.env.DATABASE_URL = urlLocal;
+const initialTarget = ((process.env.DB_TARGET || '').toLowerCase() === 'railway' && urlRailway) ? 'railway' : 'local';
+let prisma = initialTarget === 'railway' ? prismaRailway : prismaLocal;
+process.env.DB_TARGET = initialTarget;
+process.env.DATABASE_URL = initialTarget === 'railway' ? urlRailway : urlLocal;
 
 // Alternar dinamicamente o alvo do banco (local/railway)
-export const switchDbTarget = async () => {
+export const switchDbTarget = async (next) => {
   try {
+    const target = String(next || '').toLowerCase() === 'railway' && urlRailway ? 'railway' : 'local';
     await prisma.$disconnect().catch(() => {});
-    prisma = prismaLocal;
-    process.env.DB_TARGET = 'local';
-    process.env.DATABASE_URL = urlLocal;
+    prisma = target === 'railway' ? prismaRailway : prismaLocal;
+    process.env.DB_TARGET = target;
+    process.env.DATABASE_URL = target === 'railway' ? urlRailway : urlLocal;
     await prisma.$connect();
-    return { ok: true, target: 'local' };
+    return { ok: true, target };
   } catch (err) {
-    console.error('Erro ao alternar DB_TARGET (Prisma):', err);
-    return { ok: false, error: 'Falha ao alternar DB_TARGET' };
+    return { ok: false };
   }
 };
 
@@ -61,8 +62,8 @@ export const getCurrentDbInfo = () => {
 };
 
 export const getProductsForTarget = async (target) => {
-  // SEMPRE USAR BASE LOCAL
-  const client = prismaLocal;
+  const t = String(target || '').toLowerCase();
+  const client = t === 'railway' ? prismaRailway : prismaLocal;
   const prods = await client.product.findMany({ where: { ativo: true }, select: { id: true, nome: true }, orderBy: { id: "asc" }, take: 50 });
   return prods;
 };
@@ -73,8 +74,8 @@ export const getActivePrisma = () => prisma;
 
 // Schema helpers (MySQL)
 export const getColumnsForTarget = async (target, table) => {
-  // SEMPRE USAR BASE LOCAL
-  const client = prismaLocal;
+  const t = String(target || '').toLowerCase();
+  const client = t === 'railway' ? prismaRailway : prismaLocal;
   try {
     const rows = await client.$queryRawUnsafe(`SHOW COLUMNS FROM \`${table}\``);
     return rows.map(r => ({

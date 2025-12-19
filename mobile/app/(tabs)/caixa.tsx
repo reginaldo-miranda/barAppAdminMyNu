@@ -428,7 +428,7 @@ export default function CaixaScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Sistema de Caixa</Text>
         <TouchableOpacity onPress={onRefresh} style={styles.refreshButton}>
-          <SafeIcon name="refresh" size={24} color="#2196F3" fallbackText="↻" />
+          <SafeIcon name="refresh" size={20} color="#2196F3" fallbackText="↻" />
         </TouchableOpacity>
       </View>
 
@@ -446,32 +446,34 @@ export default function CaixaScreen() {
             <Text style={styles.emptyText}>Nenhuma venda em aberto</Text>
           </View>
         ) : (
-          vendas.map((venda) => (
-            <View key={venda._id} style={styles.vendaCard}>
-              <View style={styles.rowLine}>
-                <Text style={styles.vendaTitle}>
-                  {getVendaTitle(venda)}
-                </Text>
-                <View style={styles.rowRight}>
-                  <Text style={styles.vendaTotal}>
-                    R$ {calcularTotal(venda).toFixed(2)}
+          <View style={styles.listGrid}>
+            {vendas.map((venda) => (
+              <View key={venda._id} style={styles.vendaCard}>
+                <View style={styles.rowLine}>
+                  <Text style={styles.vendaTitle}>
+                    {getVendaTitle(venda)}
                   </Text>
-                  <TouchableOpacity
-                    style={styles.rowAction}
-                    onPress={() => abrirModalFinalizacao(venda)}
-                    accessibilityLabel="Finalizar venda"
-                  >
-                    <SafeIcon name="checkmark-circle" size={24} color="#4CAF50" fallbackText="✓" />
-                  </TouchableOpacity>
+                  <View style={styles.rowRight}>
+                    <Text style={styles.vendaTotal}>
+                      R$ {calcularTotal(venda).toFixed(2)}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.rowAction}
+                      onPress={() => abrirModalFinalizacao(venda)}
+                      accessibilityLabel="Finalizar venda"
+                    >
+                      <SafeIcon name="checkmark-circle" size={20} color="#4CAF50" fallbackText="✓" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                <View style={styles.rowLine}>
+                  <Text style={styles.vendaInfoCompact}>
+                    Itens: {venda.itens.length} | Funcionário: {venda.funcionario?.nome || 'N/A'}
+                  </Text>
                 </View>
               </View>
-              <View style={styles.rowLine}>
-                <Text style={styles.vendaInfoCompact}>
-                  Itens: {venda.itens.length} | Funcionário: {venda.funcionario?.nome || 'N/A'}
-                </Text>
-              </View>
-            </View>
-          ))
+            ))}
+          </View>
         )}
 
         {/* Vendas registradas no Caixa aberto */}
@@ -507,7 +509,7 @@ export default function CaixaScreen() {
 
             {Platform.OS === 'web' && (
               <View style={styles.filterBar}>
-                <View style={{ flexDirection: 'row' }}>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
                   <TouchableOpacity
                     style={[styles.paymentOption, markFilter === 'all' && styles.paymentOptionSelected]}
                     onPress={() => setMarkFilter('all')}
@@ -527,14 +529,15 @@ export default function CaixaScreen() {
                     <Text style={[styles.paymentOptionText, markFilter === 'unmarked' && styles.paymentOptionTextSelected]}>Não marcados</Text>
                   </TouchableOpacity>
                 </View>
-                <View style={{ flexDirection: 'row' }}>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
                   {['all', 'dinheiro', 'cartao', 'pix'].map((method) => (
                     <TouchableOpacity
                       key={method}
                       style={[styles.paymentOption, paymentFilterWeb === method && styles.paymentOptionSelected]}
                       onPress={() => setPaymentFilterWeb(method as any)}
                     >
-                      <Text style={[styles.paymentOptionText, paymentFilterWeb === method && styles.paymentOptionTextSelected]}>
+                      <Text style={[styles.paymentOptionText, paymentFilterWeb === method && styles.paymentOptionTextSelected]}
+                      >
                         {method === 'all' ? 'Todas' : method.charAt(0).toUpperCase() + method.slice(1)}
                       </Text>
                     </TouchableOpacity>
@@ -549,63 +552,65 @@ export default function CaixaScreen() {
                 <Text style={styles.emptyText}>Nenhuma venda registrada no caixa</Text>
               </View>
             ) : (
-              filteredCaixaVendas.map((cv, idx) => {
-                const mesaObj: any = mesaInfoBySale[saleKey(cv.venda)] || ((cv.venda.mesa && typeof cv.venda.mesa === 'object') ? cv.venda.mesa : undefined);
-                const clean = (s: any) => (typeof s === 'string' ? s.trim() : '');
-                const nomeRespMesa = clean(mesaObj?.nomeResponsavel);
-                const nomeFuncMesa = clean(mesaObj?.funcionarioResponsavel?.nome);
-                let responsavel = 
-                  nomeRespMesa ||
-                  clean(cv.venda?.responsavelNome) ||
-                  'N/A';
-                let funcionario = 
-                  nomeFuncMesa ||
-                  clean(cv.venda?.funcionario?.nome) ||
-                  clean((cv.venda as any)?.funcionarioAberturaNome) ||
-                  clean((cv.venda as any)?.funcionarioNome) ||
-                  'N/A';
-                if (responsavel !== 'N/A' && funcionario !== 'N/A' && responsavel === funcionario) {
-                  const respAlt = clean(cv.venda?.responsavelNome);
-                  if (respAlt && respAlt !== funcionario) {
-                    responsavel = respAlt;
-                  } else {
-                    responsavel = 'N/A';
+              <View style={styles.listGrid}>
+                {filteredCaixaVendas.map((cv, idx) => {
+                  const mesaObj: any = mesaInfoBySale[saleKey(cv.venda)] || ((cv.venda.mesa && typeof cv.venda.mesa === 'object') ? cv.venda.mesa : undefined);
+                  const clean = (s: any) => (typeof s === 'string' ? s.trim() : '');
+                  const nomeRespMesa = clean(mesaObj?.nomeResponsavel);
+                  const nomeFuncMesa = clean(mesaObj?.funcionarioResponsavel?.nome);
+                  let responsavel = 
+                    nomeRespMesa ||
+                    clean(cv.venda?.responsavelNome) ||
+                    'N/A';
+                  let funcionario = 
+                    nomeFuncMesa ||
+                    clean(cv.venda?.funcionario?.nome) ||
+                    clean((cv.venda as any)?.funcionarioAberturaNome) ||
+                    clean((cv.venda as any)?.funcionarioNome) ||
+                    'N/A';
+                  if (responsavel !== 'N/A' && funcionario !== 'N/A' && responsavel === funcionario) {
+                    const respAlt = clean(cv.venda?.responsavelNome);
+                    if (respAlt && respAlt !== funcionario) {
+                      responsavel = respAlt;
+                    } else {
+                      responsavel = 'N/A';
+                    }
                   }
-                }
-                return (
-                  <View key={`${saleKey(cv.venda)}-${idx}`} style={styles.vendaCard}>
-                    <View style={styles.rowLine}>
-                      <Text style={styles.vendaTitle}>
-                        {mesaObj
-                          ? (mesaObj?.nome || (mesaObj?.numero != null ? `Mesa ${mesaObj?.numero}` : 'Mesa'))
-                          : getVendaTitle(cv.venda)}
-                      </Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Text style={styles.vendaTotal}>R$ {cv.valor.toFixed(2)}</Text>
-                        {Platform.OS === 'web' && (
-                          <TouchableOpacity
-                            style={styles.rowAction}
-                            onPress={() => toggleMark(saleKey(cv.venda))}
-                            accessibilityLabel={marks[saleKey(cv.venda)] ? 'Desmarcar' : 'Marcar'}
-                          >
-                            <SafeIcon
-                              name={marks[saleKey(cv.venda)] ? 'checkbox' : 'square-outline'}
-                              size={22}
-                              color={marks[saleKey(cv.venda)] ? '#2196F3' : '#999'}
-                              fallbackText={marks[saleKey(cv.venda)] ? '☑' : '☐'}
-                            />
-                          </TouchableOpacity>
-                        )}
+                  return (
+                    <View key={`${saleKey(cv.venda)}-${idx}`} style={styles.vendaCard}>
+                      <View style={styles.rowLine}>
+                        <Text style={styles.vendaTitle}>
+                          {mesaObj
+                            ? (mesaObj?.nome || (mesaObj?.numero != null ? `Mesa ${mesaObj?.numero}` : 'Mesa'))
+                            : getVendaTitle(cv.venda)}
+                        </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <Text style={styles.vendaTotal}>R$ {cv.valor.toFixed(2)}</Text>
+                          {Platform.OS === 'web' && (
+                            <TouchableOpacity
+                              style={styles.rowAction}
+                              onPress={() => toggleMark(saleKey(cv.venda))}
+                              accessibilityLabel={marks[saleKey(cv.venda)] ? 'Desmarcar' : 'Marcar'}
+                            >
+                              <SafeIcon
+                                name={marks[saleKey(cv.venda)] ? 'checkbox' : 'square-outline'}
+                                size={18}
+                                color={marks[saleKey(cv.venda)] ? '#2196F3' : '#999'}
+                                fallbackText={marks[saleKey(cv.venda)] ? '☑' : '☐'}
+                              />
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      </View>
+                      <View style={styles.rowLine}>
+                        <Text style={styles.vendaInfoCompact}>
+                          Resp: {responsavel} | Atend: {funcionario} | Pgto: {cv.formaPagamento} | Itens: {cv.venda?.itens?.length ?? 0}
+                        </Text>
                       </View>
                     </View>
-                    <View style={styles.rowLine}>
-                      <Text style={styles.vendaInfoCompact}>
-                        Resp: {responsavel} | Atend: {funcionario} | Pgto: {cv.formaPagamento} | Itens: {cv.venda?.itens?.length ?? 0}
-                      </Text>
-                    </View>
-                  </View>
-                );
-              })
+                  );
+                })}
+              </View>
             )}
           </>
         )}
@@ -698,67 +703,73 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    padding: 12,
     backgroundColor: 'white',
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
   },
   title: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#333',
   },
   refreshButton: {
-    padding: 8,
+    padding: 6,
   },
   content: {
     flex: 1,
-    padding: 20,
+    padding: 12,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   emptyContainer: {
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 32,
+    paddingVertical: 24,
   },
   emptyText: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#666',
     marginTop: 12,
   },
   vendaCard: {
     backgroundColor: 'white',
-    borderRadius: 8,
+    borderRadius: 6,
     padding: 6,
     marginBottom: 6,
+    width: Platform.OS === 'web' ? '49%' : '100%',
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+  },
+  listGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
   rowLine: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 6,
+    paddingVertical: 4,
   },
   rowRight: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   rowAction: {
-    marginLeft: 6,
+    marginLeft: 4,
   },
   vendaInfoCompact: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#666',
-    marginTop: 6,
+    marginTop: 4,
   },
   vendaHeader: {
     flexDirection: 'row',
@@ -767,30 +778,30 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   vendaTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
   },
   vendaTotal: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#4CAF50',
   },
   vendaInfo: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#666',
     marginBottom: 4,
   },
   vendaActions: {
-    marginTop: 12,
+    marginTop: 8,
     alignItems: 'flex-end',
   },
   finalizarButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#4CAF50',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 6,
   },
   finalizarButtonText: {
@@ -812,7 +823,7 @@ const styles = StyleSheet.create({
     maxWidth: 400,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 16,
@@ -825,12 +836,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   modalInfoText: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#333',
     textAlign: 'center',
   },
   paymentLabel: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
     marginBottom: 12,
     color: '#333',
@@ -838,11 +849,11 @@ const styles = StyleSheet.create({
   paymentOptions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 24,
+    marginBottom: 16,
   },
   paymentOption: {
-    flex: 1,
-    padding: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     borderWidth: 1,
     borderColor: '#ddd',
     borderRadius: 6,
@@ -854,7 +865,7 @@ const styles = StyleSheet.create({
     borderColor: '#2196F3',
   },
   paymentOptionText: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#666',
   },
   paymentOptionTextSelected: {
@@ -867,7 +878,7 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     flex: 1,
-    padding: 12,
+    padding: 10,
     borderWidth: 1,
     borderColor: '#ddd',
     borderRadius: 6,
@@ -875,19 +886,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cancelButtonText: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#666',
   },
   confirmButton: {
     flex: 1,
-    padding: 12,
+    padding: 10,
     backgroundColor: '#4CAF50',
     borderRadius: 6,
     marginLeft: 8,
     alignItems: 'center',
   },
   confirmButtonText: {
-    fontSize: 16,
+    fontSize: 14,
     color: 'white',
     fontWeight: 'bold',
   },
@@ -896,15 +907,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: 'white',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e0e0e0',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   dateDisplay: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: 'bold',
     color: '#333',
   },
@@ -914,18 +925,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexWrap: 'wrap',
     backgroundColor: 'white',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e0e0e0',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   summaryItem: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#333',
-    marginRight: 12,
-    marginVertical: 3,
+    marginRight: 10,
+    marginVertical: 2,
   },
 });
   const saleKey = (v: Sale) => String((v as any)?._id || (v as any)?.id || '');

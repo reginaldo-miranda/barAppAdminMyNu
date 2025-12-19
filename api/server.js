@@ -166,7 +166,11 @@ app.get('/api/sale/stream', (req, res) => {
     res.write(`retry: 1000\n\n`);
     sseClients.push(res);
     const unsubscribe = onSaleUpdate((payload) => {
-      try { res.write(`data: ${JSON.stringify(payload)}\n\n`); } catch {}
+      try {
+        const msg = { type: 'sale:update', payload };
+        res.write(`data: ${JSON.stringify(msg)}\n\n`);
+        console.log('[SSE] sale:update enviado para cliente');
+      } catch {}
     });
     req.on('close', () => {
       unsubscribe && unsubscribe();

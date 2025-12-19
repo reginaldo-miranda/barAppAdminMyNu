@@ -499,6 +499,9 @@ const styles = StyleSheet.create({
   },
   navigationContainer: {
     gap: 12,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
   navigationCard: {
     backgroundColor: '#FFFFFF',
@@ -509,6 +512,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
     overflow: 'hidden',
+    width: '48%',
   },
   navigationCardActive: {
     borderWidth: 2,

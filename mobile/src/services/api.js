@@ -10,6 +10,10 @@ const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
 
 const getEnvBaseUrl = () => {
   try {
+    if (Platform.OS === 'web') {
+      const w = typeof process !== 'undefined' ? process.env?.EXPO_PUBLIC_WEB_API_URL : undefined;
+      return w || undefined;
+    }
     const v = typeof process !== 'undefined' ? process.env?.EXPO_PUBLIC_API_URL : undefined;
     if (!v) return undefined;
     try {
@@ -43,44 +47,49 @@ function resolveApiBaseUrl() {
   // Ambiente Web: se host for local, tentar extrair IP da LAN do Metro/DevClient
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
     const hostname = window.location.hostname || '';
-    if (hostname && !LOCAL_HOSTNAMES.has(hostname)) {
-      return `http://${hostname}:${DEFAULT_PORT}/api`;
+    if (hostname) {
+      const hostOut = LOCAL_HOSTNAMES.has(hostname) ? 'localhost' : hostname;
+      return `http://${hostOut}:${DEFAULT_PORT}/api`;
     }
     const candidates = [];
     try {
       const scriptUrl = NativeModules?.SourceCode?.scriptURL;
       if (scriptUrl) {
         const u = new URL(String(scriptUrl));
-        if (u.hostname && !LOCAL_HOSTNAMES.has(u.hostname)) candidates.push(u.hostname);
+        if (u.hostname) candidates.push(u.hostname);
       }
     } catch {}
     try {
       const devHost = Constants?.expoGo?.developer?.host;
       if (devHost) {
         const h = String(devHost).split(':')[0];
-        if (h && !LOCAL_HOSTNAMES.has(h)) candidates.push(h);
+        if (h) candidates.push(h);
       }
     } catch {}
     try {
       const hostUri = Constants?.expoConfig?.hostUri;
       if (hostUri) {
         const h = String(hostUri).split(':')[0];
-        if (h && !LOCAL_HOSTNAMES.has(h)) candidates.push(h);
+        if (h) candidates.push(h);
       }
     } catch {}
     try {
       const dbgHost = Constants?.manifest?.debuggerHost;
       if (dbgHost) {
         const h = String(dbgHost).split(':')[0];
-        if (h && !LOCAL_HOSTNAMES.has(h)) candidates.push(h);
+        if (h) candidates.push(h);
       }
     } catch {}
     try {
       const envPackagerHost = (typeof process !== 'undefined' ? process.env?.REACT_NATIVE_PACKAGER_HOSTNAME : '') || '';
-      if (envPackagerHost && !LOCAL_HOSTNAMES.has(envPackagerHost)) candidates.push(envPackagerHost);
+      if (envPackagerHost) candidates.push(envPackagerHost);
     } catch {}
-    const picked = candidates.find((h) => h && !LOCAL_HOSTNAMES.has(h));
-    if (picked) return `http://${picked}:${DEFAULT_PORT}/api`;
+    const picked = candidates.find((h) => h);
+    if (picked) {
+      const hostName = String(picked).split(':')[0];
+      const hostOut = LOCAL_HOSTNAMES.has(hostName) ? 'localhost' : hostName;
+      return `http://${hostOut}:${DEFAULT_PORT}/api`;
+    }
     return '';
   }
 
@@ -281,12 +290,18 @@ api.interceptors.response.use(
 export const setApiBaseUrl = async (url) => {
   try {
     if (!url) return false;
-    if (/^(http:\/\/|https:\/\/)?(localhost|127\.0\.0\.1)/i.test(url)) {
+    if (Platform.OS !== 'web' && /^(http:\/\/|https:\/\/)?(localhost|127\.0\.0\.1)/i.test(url)) {
       throw new Error('URL inválida: localhost não é permitido no mobile');
     }
-    if (!/\/api\/?$/.test(url)) {
-      url = url.replace(/\/?$/, '') + '/api';
+    let s = String(url).trim();
+    if (s.endsWith('/api')) {
+    } else if (s.endsWith('/api/')) {
+      s = s.slice(0, -1);
+    } else {
+      if (s.endsWith('/')) s = s.slice(0, -1);
+      s = s + '/api';
     }
+    url = s;
     await AsyncStorage.setItem(STORAGE_KEYS.API_BASE_URL, url);
     api.defaults.baseURL = url;
     return true;
@@ -683,33 +698,33 @@ export function getDevControlUrlFromBase(baseUrl) {
     try {
       const u = new URL(base);
       const h = u.hostname;
-      if (!isBad(h)) return `http://${h}:4000`;
+      if (!isBad(h)) return `http://${h}:4005`;
     } catch {}
     const scriptUrl = NativeModules?.SourceCode?.scriptURL;
     if (scriptUrl) {
       try {
         const parsed = new URL(String(scriptUrl));
         const h = parsed.hostname;
-        if (!isBad(h)) return `http://${h}:4000`;
+        if (!isBad(h)) return `http://${h}:4005`;
       } catch {}
     }
     const devHost = Constants?.expoGo?.developer?.host;
     if (devHost) {
       const h = String(devHost).split(':')[0];
-      if (!isBad(h)) return `http://${h}:4000`;
+      if (!isBad(h)) return `http://${h}:4005`;
     }
     const hostUri = Constants?.expoConfig?.hostUri;
     if (hostUri) {
       const h = String(hostUri).split(':')[0];
-      if (!isBad(h)) return `http://${h}:4000`;
+      if (!isBad(h)) return `http://${h}:4005`;
     }
     const dbgHost = Constants?.manifest?.debuggerHost;
     if (dbgHost) {
       const h = String(dbgHost).split(':')[0];
-      if (!isBad(h)) return `http://${h}:4000`;
+      if (!isBad(h)) return `http://${h}:4005`;
     }
     const envPackagerHost = (typeof process !== 'undefined' ? process.env?.REACT_NATIVE_PACKAGER_HOSTNAME : '') || '';
-    if (!isBad(envPackagerHost)) return `http://${envPackagerHost}:4000`;
+    if (!isBad(envPackagerHost)) return `http://${envPackagerHost}:4005`;
     return '';
   } catch {
     return '';

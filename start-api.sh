@@ -1,7 +1,8 @@
 #!/bin/bash
 
 echo "🚀 Iniciando API do Sistema Bar..."
-API_DIR="/Users/reginaldomiranda/Documents/barAppAdminMyNu/api"
+ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+API_DIR="$ROOT_DIR/api"
 cd "$API_DIR" || { echo "❌ Não foi possível acessar $API_DIR"; exit 1; }
 
 # Verificar se .env existe
@@ -25,7 +26,7 @@ set -a
 source .env
 set +a
 
-DB_TARGET="local"
+DB_TARGET="${1:-local}"
 
 # Garantir variáveis de conexão
 if ! grep -q "^DATABASE_URL_LOCAL=" .env; then
@@ -46,9 +47,22 @@ set -a
 source .env
 set +a
 
-# Definir sempre base local
-export DATABASE_URL="$DATABASE_URL_LOCAL"
-export DB_TARGET="local"
+if [ "$DB_TARGET" = "railway" ]; then
+  export DATABASE_URL="$DATABASE_URL_RAILWAY"
+  export DB_TARGET="railway"
+else
+  export DATABASE_URL="$DATABASE_URL_LOCAL"
+  export DB_TARGET="local"
+fi
+
+DETECTED_IP=$(ipconfig getifaddr en0 2>/dev/null)
+if [ -z "$DETECTED_IP" ]; then
+  DETECTED_IP=$(ipconfig getifaddr en1 2>/dev/null)
+fi
+LAN_IP=${REACT_NATIVE_PACKAGER_HOSTNAME:-$DETECTED_IP}
+if [ -n "$LAN_IP" ]; then
+  echo "🔗 API LAN URL: http://${LAN_IP}:4000/api"
+fi
 
 # Funções utilitárias para garantir reinício limpo
 kill_by_port() {
@@ -71,9 +85,8 @@ fi
 echo "🛠️ Aplicando schema do Prisma (db push)"
 npx prisma db push --accept-data-loss >/dev/null 2>&1 || true
 echo "🧩 Gerando Prisma Client"
-npx prisma generate >/dev/null 2>&1 || true
 
-:
+npx prisma generate >/dev/null 2>&1 || true
 
 # Garantir porta livre e iniciar servidor
 kill_by_port 4000

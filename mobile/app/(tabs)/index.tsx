@@ -201,22 +201,22 @@ export default function HomeScreen() {
         <Text style={styles.sectionTitle}>Status de Hoje</Text>
         <View style={styles.statsGrid}>
           <View style={[styles.statCard, { backgroundColor: '#E8F5E8' }]}>
-            <SafeIcon name="trending-up" size={24} color="#4CAF50" fallbackText="↑" />
+            <SafeIcon name="trending-up" size={20} color="#4CAF50" fallbackText="↑" />
             <Text style={styles.statNumber}>{stats.totalSales}</Text>
             <Text style={styles.statLabel}>Vendas</Text>
           </View>
           <View style={[styles.statCard, { backgroundColor: '#E3F2FD' }]}>
-            <SafeIcon name="cash" size={24} color="#FF0000" fallbackText="R$" />
+            <SafeIcon name="cash" size={20} color="#FF0000" fallbackText="R$" />
             <Text style={styles.statNumber}>R$ {stats.totalRevenue.toFixed(2)}</Text>
             <Text style={styles.statLabel}>Faturamento</Text>
           </View>
           <View style={[styles.statCard, { backgroundColor: '#FFF3E0' }]}>
-            <SafeIcon name="restaurant" size={24} color="#FF9800" fallbackText="🍽" />
+            <SafeIcon name="restaurant" size={20} color="#FF9800" fallbackText="🍽" />
             <Text style={styles.statNumber}>{stats.openTables}</Text>
             <Text style={styles.statLabel}>Mesas Abertas</Text>
           </View>
           <View style={[styles.statCard, { backgroundColor: '#F3E5F5' }]}>
-            <SafeIcon name="receipt" size={24} color="#9C27B0" fallbackText="Rec" />
+            <SafeIcon name="receipt" size={20} color="#9C27B0" fallbackText="Rec" />
             <Text style={styles.statNumber}>{stats.openComandas}</Text>
             <Text style={styles.statLabel}>Comandas Abertas</Text>
           </View>
@@ -234,7 +234,7 @@ export default function HomeScreen() {
               onPress={item.onPress}
             >
               <View style={[styles.menuIcon, { backgroundColor: item.color }]}>
-                <SafeIcon name={item.icon as any} size={28} color="#fff" fallbackText="▶" />
+                <SafeIcon name={item.icon as any} size={22} color="#fff" fallbackText="▶" />
               </View>
               <View style={styles.menuContent}>
                 <Text style={styles.menuTitle}>{item.title}</Text>
@@ -309,53 +309,54 @@ const styles = StyleSheet.create({
   },
   statsGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     justifyContent: 'space-between',
+    alignItems: 'center',
   },
   statCard: {
-    width: '48%',
-    padding: 15,
-    borderRadius: 12,
+    width: '24%',
+    padding: 10,
+    borderRadius: 10,
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 0,
   },
   statNumber: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
-    marginTop: 8,
+    marginTop: 6,
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 10,
     color: '#666',
-    marginTop: 4,
+    marginTop: 2,
   },
   menuContainer: {
     padding: 20,
   },
   menuGrid: {
-    gap: 12,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
   menuItem: {
     backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 16,
+    padding: 12,
     flexDirection: 'row',
     alignItems: 'center',
     borderLeftWidth: 4,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 3.84,
     elevation: 5,
+    width: '48%',
   },
   menuIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 15,
@@ -364,12 +365,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   menuTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
     color: '#333',
   },
   menuSubtitle: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#666',
     marginTop: 2,
   },

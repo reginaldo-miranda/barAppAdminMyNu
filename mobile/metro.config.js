@@ -46,12 +46,30 @@ function checkHealth(url, timeoutMs = 2000) {
   });
 }
 
+async function ensureApiDeps(apiDir) {
+  try {
+    const expressDir = path.resolve(apiDir, 'node_modules', 'express');
+    const hasDeps = fs.existsSync(expressDir);
+    if (!hasDeps) {
+      await new Promise((resolve) => {
+        const p = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install','--no-audit','--no-fund'], {
+          cwd: apiDir,
+          stdio: 'inherit',
+        });
+        p.on('close', () => resolve());
+        p.on('error', () => resolve());
+      });
+    }
+  } catch {}
+}
+
 function createDevControlServer(lanIp) {
   try {
     if (process.env.EXPO_PUBLIC_DEV_CONTROL_URL) return;
     const server = http.createServer((req, res) => {
       try {
-        const u = new URL(req.url, `http://${lanIp}:4005`);
+        const baseHost = lanIp || 'localhost';
+        const u = new URL(req.url, `http://${baseHost}:4005`);
         if (u.pathname === '/dev/start-api') {
           const t = (u.searchParams.get('target') || '').toLowerCase();
           const arg = t === 'local' ? 'local' : 'railway';
@@ -86,23 +104,27 @@ function createDevControlServer(lanIp) {
     });
     server.on('error', () => {});
     server.listen(4005, '0.0.0.0', () => {
-      process.env.EXPO_PUBLIC_DEV_CONTROL_URL = `http://${lanIp}:4005`;
+      const exposeHost = lanIp || 'localhost';
+      process.env.EXPO_PUBLIC_DEV_CONTROL_URL = `http://${exposeHost}:4005`;
     });
   } catch {}
 }
 
 async function ensureApiRunning() {
   try {
+    process.env.EXPO_PUBLIC_WEB_API_URL = process.env.EXPO_PUBLIC_WEB_API_URL || 'http://localhost:4000/api';
     const lanIp = getLanIp();
     if (lanIp) {
       process.env.REACT_NATIVE_PACKAGER_HOSTNAME = lanIp;
       createDevControlServer(lanIp);
       // Expor a URL pública da API para o bundle
       process.env.EXPO_PUBLIC_API_URL = `http://${lanIp}:4000/api`;
-      const healthy = await checkHealth(`http://${lanIp}:4000/api/health`, 1500);
+      process.env.EXPO_PUBLIC_WEB_API_URL = `http://localhost:4000/api`;
+      let healthy = await checkHealth(`http://${lanIp}:4000/api/health`, 1500);
       if (!healthy) {
         console.log('🔧 API não está ativa. Iniciando automaticamente com DB_TARGET=local...');
-        const scriptPath = path.resolve(__dirname, '..', 'start-api.sh');
+        const scriptPathSh = path.resolve(__dirname, '..', 'start-api.sh');
+        const scriptPathPs1 = path.resolve(__dirname, '..', 'start-api.ps1');
         // Ler alvo preferido do arquivo .env da API, se existir
         let preferredTarget = 'railway';
         try {
@@ -114,16 +136,54 @@ async function ensureApiRunning() {
           }
         } catch {}
         try {
-          const child = spawn('bash', [scriptPath, preferredTarget], {
-            cwd: path.resolve(__dirname, '..'),
-            detached: true,
-            stdio: 'ignore',
-          });
+          let child;
+          if (process.platform === 'win32' && fs.existsSync(scriptPathPs1)) {
+            child = spawn('powershell', ['-NoProfile','-ExecutionPolicy','Bypass','-File', scriptPathPs1], {
+              cwd: path.resolve(__dirname, '..'),
+              detached: true,
+              stdio: 'ignore',
+            });
+          } else if (fs.existsSync(scriptPathSh)) {
+            child = spawn('bash', [scriptPathSh, preferredTarget], {
+              cwd: path.resolve(__dirname, '..'),
+              detached: true,
+              stdio: 'ignore',
+            });
+          } else {
+            const apiDir = path.resolve(__dirname, '..', 'api');
+            try {
+              const envExample = path.resolve(apiDir, 'env_exemplo');
+              const envTarget = path.resolve(apiDir, '.env');
+              if (!fs.existsSync(envTarget) && fs.existsSync(envExample)) {
+                fs.copyFileSync(envExample, envTarget);
+              }
+            } catch {}
+            await ensureApiDeps(apiDir);
+            child = spawn('node', ['server.js'], {
+              cwd: apiDir,
+              detached: true,
+              stdio: 'ignore',
+              env: { ...process.env, DB_TARGET: 'local' },
+            });
+          }
           child.unref();
+          for (let i = 0; i < 10; i++) {
+            healthy = await checkHealth(`http://${lanIp}:4000/api/health`, 800) || await checkHealth(`http://localhost:4000/api/health`, 800);
+            if (healthy) break;
+            await new Promise((r) => setTimeout(r, 400));
+          }
         } catch (e) {
           console.warn('⚠️ Falha ao iniciar API automaticamente:', e?.message || e);
           try {
             const apiDir = path.resolve(__dirname, '..', 'api');
+            try {
+              const envExample = path.resolve(apiDir, 'env_exemplo');
+              const envTarget = path.resolve(apiDir, '.env');
+              if (!fs.existsSync(envTarget) && fs.existsSync(envExample)) {
+                fs.copyFileSync(envExample, envTarget);
+              }
+            } catch {}
+            await ensureApiDeps(apiDir);
             const node = spawn('node', ['server.js'], {
               cwd: apiDir,
               detached: true,
@@ -131,15 +191,58 @@ async function ensureApiRunning() {
               env: { ...process.env, DB_TARGET: preferredTarget },
             });
             node.unref();
+            for (let i = 0; i < 10; i++) {
+              healthy = await checkHealth(`http://${lanIp}:4000/api/health`, 800) || await checkHealth(`http://localhost:4000/api/health`, 800);
+              if (healthy) break;
+              await new Promise((r) => setTimeout(r, 400));
+            }
           } catch (e2) {
             console.warn('⚠️ Fallback direto também falhou:', e2?.message || e2);
           }
         }
-      } else {
-        console.log('✅ API já está saudável em LAN.');
       }
+      if (healthy) console.log('✅ API já está saudável em LAN.');
     } else {
-      console.warn('⚠️ Não foi possível detectar IP da LAN automaticamente.');
+      let healthy = false;
+      createDevControlServer('localhost');
+      try {
+        const scriptPathSh = path.resolve(__dirname, '..', 'start-api.sh');
+        const scriptPathPs1 = path.resolve(__dirname, '..', 'start-api.ps1');
+        let child;
+        if (process.platform === 'win32' && fs.existsSync(scriptPathPs1)) {
+          child = spawn('powershell', ['-NoProfile','-ExecutionPolicy','Bypass','-File', scriptPathPs1], {
+            cwd: path.resolve(__dirname, '..'),
+            detached: true,
+            stdio: 'ignore',
+          });
+          child.unref();
+        } else if (fs.existsSync(scriptPathSh)) {
+          child = spawn('bash', [scriptPathSh, 'local'], {
+            cwd: path.resolve(__dirname, '..'),
+            detached: true,
+            stdio: 'ignore',
+          });
+          child.unref();
+        } else {
+          const apiDir = path.resolve(__dirname, '..', 'api');
+          await ensureApiDeps(apiDir);
+          const node = spawn('node', ['server.js'], {
+            cwd: apiDir,
+            detached: true,
+            stdio: 'ignore',
+            env: { ...process.env, DB_TARGET: 'local' },
+          });
+          node.unref();
+        }
+        for (let i = 0; i < 12; i++) {
+          healthy = await checkHealth(`http://localhost:4000/api/health`, 800);
+          if (healthy) break;
+          await new Promise((r) => setTimeout(r, 400));
+        }
+      } catch {}
+      if (!healthy) {
+        console.warn('⚠️ Não foi possível detectar IP da LAN automaticamente.');
+      }
     }
   } catch (e) {
     console.warn('⚠️ ensureApiRunning error:', e?.message || e);

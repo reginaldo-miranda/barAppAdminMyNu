@@ -369,19 +369,22 @@ export default function TabletCozinhaScreen(props = {}) {
     }
   }, [setorId, setorIdOverride, filterStatus, forceFilterStatus, hiddenIds, datePreset, customFrom, customTo, selectedEmployeeIds, carregarFuncionarios]);
 
-  const mesasAgrupadas = agruparPorMesa(items);
+const mesasAgrupadas = agruparPorMesa(items);
 
-  const getWaitingMinutes = (dt) => {
-    const t = new Date(dt).getTime();
-    return Math.max(0, Math.floor((Date.now() - t) / 60000));
-  };
+const getWaitingMinutes = (dt) => {
+  const t = new Date(dt).getTime();
+  return Math.max(0, Math.floor((Date.now() - t) / 60000));
+};
 
-  const renderItem = ({ item }) => {
-    const waiting = getWaitingMinutes(item.horario);
-    const urgencyStyle = waiting >= 20 ? styles.urgentHigh : waiting >= 10 ? styles.urgentMedium : waiting >= 5 ? styles.urgentLow : null;
-    const timeStr = new Date(item.horario).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false });
-    const rawMesa = String(item?.mesa || '');
-    const isComanda = /comanda/i.test(rawMesa) || String(item?.tipo || '').toLowerCase() === 'comanda';
+const renderItem = ({ item }) => {
+  const screenWidth = Dimensions.get('window').width;
+  const isPhone = screenWidth < 768;
+  const iconSize = isPhone ? 12 : 24;
+  const waiting = getWaitingMinutes(item.horario);
+  const urgencyStyle = waiting >= 20 ? styles.urgentHigh : waiting >= 10 ? styles.urgentMedium : waiting >= 5 ? styles.urgentLow : null;
+  const timeStr = new Date(item.horario).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const rawMesa = String(item?.mesa || '');
+  const isComanda = /comanda/i.test(rawMesa) || String(item?.tipo || '').toLowerCase() === 'comanda';
     const displayName = rawMesa.replace(/^\s*(comanda|mesa)\s*:?\s*/i, '').trim();
     return (
       <Animated.View style={[styles.itemContainer, urgencyStyle, { opacity: fadeAnim }]}> 
@@ -416,7 +419,7 @@ export default function TabletCozinhaScreen(props = {}) {
         </View>
         {item.status === 'pendente' ? (
           <TouchableOpacity style={[styles.checkbox, { borderColor: '#9E9E9E' }]} onPress={() => marcarComoPronto(item)} activeOpacity={0.8}>
-            <Ionicons name="square-outline" size={24} color="#616161" />
+            <Ionicons name="square-outline" size={iconSize} color="#616161" />
             <Text style={[styles.checkboxText, { color: '#616161' }]}>Marcar como pronto</Text>
           </TouchableOpacity>
         ) : item.status === 'pronto' ? (
@@ -438,12 +441,12 @@ export default function TabletCozinhaScreen(props = {}) {
             activeOpacity={0.8}
             disabled={submittingId === item.id}
           >
-            <Ionicons name="square-outline" size={24} color="#616161" />
+            <Ionicons name="square-outline" size={iconSize} color="#616161" />
             <Text style={[styles.checkboxText, { color: '#616161' }]}>Marcar como entregue</Text>
           </TouchableOpacity>
         ) : (
           <View style={[styles.checkbox, { borderColor: '#9E9E9E' }]}> 
-            <Ionicons name="checkmark-circle" size={24} color="#9E9E9E" />
+            <Ionicons name="checkmark-circle" size={iconSize} color="#9E9E9E" />
             <Text style={[styles.checkboxText, { color: '#9E9E9E' }]}>Entregue</Text>
           </View>
         )}
@@ -932,19 +935,19 @@ const styles = StyleSheet.create({
   checkbox: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingHorizontal: Dimensions.get('window').width < 768 ? 6 : 12,
+    paddingVertical: Dimensions.get('window').width < 768 ? 5 : 10,
+    borderRadius: Dimensions.get('window').width < 768 ? 4 : 8,
     borderWidth: 1,
     borderColor: '#4CAF50',
-    minWidth: 100,
+    minWidth: Dimensions.get('window').width < 768 ? 50 : 100,
     justifyContent: 'center',
   },
   checkboxText: {
     color: '#4CAF50',
     fontWeight: 'bold',
     marginLeft: 6,
-    fontSize: 16,
+    fontSize: Dimensions.get('window').width < 768 ? 8 : 16,
   },
   statusPill: {
     alignSelf: 'flex-start',

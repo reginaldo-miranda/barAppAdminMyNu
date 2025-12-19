@@ -3,13 +3,13 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
-    "start": "expo start",
+    "start": "node ./node_modules/expo/bin/cli start --host lan",
     "start:lan": "bash ../start-mobile.sh",
     "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web",
-    "lint": "expo lint",
+    "android": "node ./node_modules/expo/bin/cli start --android --host lan",
+    "ios": "node ./node_modules/expo/bin/cli start --ios --host lan",
+    "web": "node ./node_modules/expo/bin/cli start --web --host lan",
+    "lint": "node ./node_modules/expo/bin/cli lint",
     "test:cart": "node ./scripts/run-cart-tests.js",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -53,6 +53,7 @@
     "retry-axios": "^4.0.0"
   },
   "devDependencies": {
+    "@expo/cli": "^54.0.0",
     "@testing-library/jest-native": "^5.4.3",
     "@testing-library/react-native": "^13.3.3",
     "@types/jest": "^30.0.0",

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { saleService, mesaService, comandaService, getWsUrl, authService } from '../src/services/api';
+import { saleService, mesaService, comandaService, getWsUrl, authService, API_URL } from '../src/services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../src/services/storage';
 import { useAuth } from '../src/contexts/AuthContext';
@@ -41,6 +41,7 @@ export default function SaleScreen() {
   const [itemsModalVisible, setItemsModalVisible] = useState(false);
   const isPhone = Dimensions.get('window').width < 768;
   const [initialItemsModalShown, setInitialItemsModalShown] = useState(false);
+  const latestReqRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     let mounted = true;
@@ -77,16 +78,22 @@ export default function SaleScreen() {
 
   useEffect(() => {
     try {
+      let ws: any = null;
+      let sse: any = null;
       const url = getWsUrl();
       if (url) {
-        const ws = new (globalThis as any).WebSocket(url);
+        ws = new (globalThis as any).WebSocket(url);
         ws.onmessage = async (e: any) => {
           try {
             const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
             if (msg?.type === 'sale:update') {
               const id = String(msg?.payload?.id || '');
               const currentId = String((sale as any)?._id || (sale as any)?.id || vendaId || '');
-              if (!id || !currentId || id !== currentId) return;
+              if (!id || !currentId || id !== currentId) {
+                console.log('[WS] sale:update ignorado', { id, currentId });
+                return;
+              }
+              console.log('[WS] sale:update aceito', { id, currentId });
               const r = await saleService.getById(currentId);
               const v = r.data;
               if (v) {
@@ -94,10 +101,49 @@ export default function SaleScreen() {
                 setCart(v.itens || []);
               }
             }
-          } catch {}
+          } catch (err) {
+            const e = err as any;
+            console.warn('[WS] erro onmessage', e?.message || e);
+          }
         };
-        return () => { try { ws.close(); } catch {} };
       }
+      try {
+        const isWeb = Platform.OS === 'web' && typeof window !== 'undefined' && !!(window as any).EventSource;
+        if (isWeb) {
+          const base = (API_URL || '').replace(/\/$/, '');
+          if (base) {
+            const sseUrl = `${base}/sale/stream`;
+            sse = new (window as any).EventSource(sseUrl);
+            sse.onmessage = async (evt: any) => {
+              try {
+                const msg = JSON.parse(String(evt?.data || '{}'));
+                if (msg?.type === 'sale:update') {
+                  const id = String(msg?.payload?.id || '');
+                  const currentId = String((sale as any)?._id || (sale as any)?.id || vendaId || '');
+                  if (!id || !currentId || id !== currentId) {
+                    console.log('[SSE] sale:update ignorado', { id, currentId });
+                    return;
+                  }
+                  console.log('[SSE] sale:update aceito', { id, currentId });
+                  const r = await saleService.getById(currentId);
+                  const v = r.data;
+                  if (v) {
+                    setSale(v);
+                    setCart(v.itens || []);
+                  }
+                }
+              } catch (e2) {
+                const ee = e2 as any;
+                console.warn('[SSE] erro onmessage', ee?.message || ee);
+              }
+            };
+          }
+        }
+      } catch {}
+      return () => {
+        try { ws && ws.close(); } catch {}
+        try { sse && sse.close && sse.close(); } catch {}
+      };
     } catch {}
   }, [sale, vendaId]);
 
@@ -107,28 +153,7 @@ export default function SaleScreen() {
     { key: 'pix', label: 'PIX', icon: 'phone-portrait' },
   ];
 
-  useEffect(() => {
-    if (viewMode === 'view') {
-      setIsViewMode(true);
-      loadMesaSale();
-    } else {
-      setIsViewMode(false);
-      
-      if (vendaId) {
-        if (tipo === 'comanda') {
-          loadComandaSale();
-        } else {
-          loadSale();
-        }
-      } else if (mesaId) {
-        loadMesaSale();
-      } else {
-        createNewSale();
-      }
-    }
-  }, []);
-
-  const loadSale = async () => {
+  const loadSale = useCallback(async () => {
     try {
       setLoading(true);
       const response = await saleService.getById(vendaId as string);
@@ -145,7 +170,17 @@ export default function SaleScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [vendaId]);
+
+  const loadMesaData = useCallback(async () => {
+    try {
+      const response = await mesaService.getById(mesaId as string);
+      setMesa(response.data);
+      setNomeResponsavel(response.data.nomeResponsavel || '');
+    } catch (error) {
+      console.error('Erro ao carregar dados da mesa:', error);
+    }
+  }, [mesaId]);
 
   // Helper: confirmação via Alert (usado apenas para remoção explícita)
   const confirmRemoveAlert = (itemName: string): Promise<boolean> => {
@@ -168,7 +203,7 @@ export default function SaleScreen() {
     });
   };
 
-  const loadComandaSale = async () => {
+  const loadComandaSale = useCallback(async () => {
     try {
       setLoading(true);
       const response = await comandaService.getById(vendaId as string);
@@ -181,53 +216,9 @@ export default function SaleScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [vendaId]);
 
-  const loadMesaSale = async () => {
-    try {
-      setLoading(true);
-      await loadMesaData();
-      
-      const response = await saleService.getByMesa(mesaId as string);
-      if (response.data && response.data.length > 0) {
-        // Pega SOMENTE a venda ativa (status 'aberta') em modo normal
-        const activeSale = response.data.find((sale: Sale) => sale.status === 'aberta');
-        if (activeSale) {
-          setSale(activeSale);
-          setCart(activeSale.itens || []);
-        } else if (!isViewMode) {
-          // Sem venda aberta: cria uma nova venda para evitar reutilizar itens antigos
-          await createNewSale();
-        } else {
-          // Em modo visualização, permitir ver a última venda (mesmo finalizada)
-          const lastSale = response.data[0];
-          setSale(lastSale);
-          setCart(lastSale.itens || []);
-        }
-      } else if (!isViewMode) {
-        await createNewSale();
-      }
-    } catch (error) {
-      console.error('Erro ao carregar venda da mesa:', error);
-      if (!isViewMode) {
-        createNewSale();
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadMesaData = async () => {
-    try {
-      const response = await mesaService.getById(mesaId as string);
-      setMesa(response.data);
-      setNomeResponsavel(response.data.nomeResponsavel || '');
-    } catch (error) {
-      console.error('Erro ao carregar dados da mesa:', error);
-    }
-  };
-
-  const createNewSale = async () => {
+  const createNewSale = useCallback(async () => {
     try {
       console.log('=== CRIANDO NOVA VENDA ===');
       console.log('User:', user);
@@ -260,11 +251,69 @@ export default function SaleScreen() {
     } catch (error: any) {
       console.error('❌ Erro ao criar venda:', error);
       console.error('Detalhes do erro:', error.response?.data);
-      Alert.alert('Erro ao criar venda', `Detalhes: ${JSON.stringify(error.response?.data || error.message)}`);
+      const errMsg = ((error && (error as any)?.message) || 'Erro desconhecido');
+      Alert.alert('Erro ao criar venda', `Detalhes: ${JSON.stringify(error?.response?.data || errMsg)}`);
     } finally {
       setLoading(false);
     }
-  };
+  }, [user, mesaId, tipo]);
+
+  const loadMesaSale = useCallback(async () => {
+    try {
+      setLoading(true);
+      await loadMesaData();
+      
+      const response = await saleService.getByMesa(mesaId as string);
+      if (response.data && response.data.length > 0) {
+        // Pega SOMENTE a venda ativa (status 'aberta') em modo normal
+        const activeSale = response.data.find((sale: Sale) => sale.status === 'aberta');
+        if (activeSale) {
+          setSale(activeSale);
+          setCart(activeSale.itens || []);
+        } else if (!isViewMode) {
+          // Sem venda aberta: cria uma nova venda para evitar reutilizar itens antigos
+          await createNewSale();
+        } else {
+          // Em modo visualização, permitir ver a última venda (mesmo finalizada)
+          const lastSale = response.data[0];
+          setSale(lastSale);
+          setCart(lastSale.itens || []);
+        }
+      } else if (!isViewMode) {
+        await createNewSale();
+      }
+    } catch (error) {
+      console.error('Erro ao carregar venda da mesa:', error);
+      if (!isViewMode) {
+        createNewSale();
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [mesaId, isViewMode, loadMesaData, createNewSale]);
+
+  
+
+  useEffect(() => {
+    if (viewMode === 'view') {
+      setIsViewMode(true);
+      loadMesaSale();
+    } else {
+      setIsViewMode(false);
+      
+      if (vendaId) {
+        if (tipo === 'comanda') {
+          loadComandaSale();
+        } else {
+          loadSale();
+        }
+      } else if (mesaId) {
+        loadMesaSale();
+      } else {
+        createNewSale();
+      }
+    }
+  }, [viewMode, vendaId, mesaId, tipo, loadSale, loadComandaSale, loadMesaSale, createNewSale]);
 
   const addToCart = async (product: Product) => {
     if (!sale) {
@@ -461,7 +510,11 @@ export default function SaleScreen() {
       }));
     }
 
+    let reqSeq = 0;
     try {
+      const key = `${String((sale as any)?._id || (sale as any)?.id || '')}:${String(produtoId)}`;
+      reqSeq = Date.now();
+      latestReqRef.current.set(key, reqSeq);
       let response;
             if (isIncrement) {
               const clientMode = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
@@ -505,6 +558,11 @@ export default function SaleScreen() {
 
       // Sincronizar estado local com resposta do backend
       if (response?.data) {
+        const latest = latestReqRef.current.get(key);
+        if (latest !== reqSeq) {
+          console.log('[Sale] resposta obsoleta ignorada', { key, reqSeq, latest });
+          return;
+        }
         setSale(response.data);
         setCart(response.data.itens || []);
         if (isIncrement) {
@@ -537,7 +595,20 @@ export default function SaleScreen() {
       console.error('Erro ao atualizar item:', { status, data });
       Alert.alert('Erro', error?.response?.data?.error || 'Não foi possível atualizar o item.');
       // Reverter UI para estado anterior
-      setCart(prevCart);
+      try {
+        const key = `${String((sale as any)?._id || (sale as any)?.id || '')}:${String(produtoId)}`;
+        const latest = latestReqRef.current.get(key);
+        if (latest === reqSeq) {
+          setCart(prevCart);
+        }
+        const log = { ts: Date.now(), action: 'updateItem', produtoId, desiredQty: clampedQty, status, data };
+        try {
+          const prev = await AsyncStorage.getItem('SYNC_ERROR_LOG');
+          const arr = prev ? JSON.parse(prev) : [];
+          const next = Array.isArray(arr) ? [...arr.slice(-19), log] : [log];
+          await AsyncStorage.setItem('SYNC_ERROR_LOG', JSON.stringify(next));
+        } catch {}
+      } catch {}
       // Tentar re-sincronizar com backend
       try {
         if (tipo === 'comanda') {
@@ -641,7 +712,7 @@ export default function SaleScreen() {
       
     } catch (error: any) {
       console.error('❌ ERRO DETALHADO ao finalizar venda:', {
-        message: error?.message,
+        message: (error && (error as any)?.message) || '',
         response: error?.response?.data,
         status: error?.response?.status,
         config: error?.config,
@@ -651,8 +722,9 @@ export default function SaleScreen() {
       let errorMessage = 'Não foi possível finalizar a venda';
       if (error?.response?.data?.error) {
         errorMessage = error.response.data.error;
-      } else if (error?.message) {
-        errorMessage = error.message;
+      } else {
+        const errMsg = (error && (error as any)?.message) || '';
+        if (errMsg) errorMessage = errMsg;
       }
       
       Alert.alert('Erro', errorMessage);

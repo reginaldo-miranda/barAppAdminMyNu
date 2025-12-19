@@ -287,11 +287,13 @@ export default function MesasScreen() {
         const url = getWsUrl();
         if (!url) { startPolling(); return; }
         ws = new (globalThis as any).WebSocket(url);
-        ws.onopen = () => { reconnectDelay = 1000; stopPolling(); setRealtimeConnected(true); };
+        ws.onopen = () => { reconnectDelay = 1000; };
         ws.onmessage = async (e: any) => {
           try {
             const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
             if (msg?.type === 'sale:update') {
+              setRealtimeConnected(true);
+              stopPolling();
               const id = String(msg?.payload?.id || '');
               if (id) {
                 try {
@@ -299,6 +301,7 @@ export default function MesasScreen() {
                   const v = r?.data;
                   const mesaId = Number(v?.mesaId || 0);
                   const aberta = String(v?.status || '').toLowerCase() === 'aberta';
+                  console.log('[WS] sale:update recebido', { id, mesaId, aberta });
                   if (mesaId && Number.isFinite(mesaId)) {
                     setMesas((prev) => prev.map((m) => {
                       const mid = Number((m as any)?.id || 0);
@@ -311,6 +314,7 @@ export default function MesasScreen() {
                       const itens = Array.isArray(v?.itens) ? v.itens : [];
                       const t = itens.reduce((acc: number, it: any) => acc + Number(it?.subtotal ?? (Number(it?.quantidade) * Number(it?.precoUnitario))), 0);
                       setMesaOpenTotals((prev) => ({ ...prev, [String(mesaId)]: t }));
+                      console.log('[WS] total atualizado', { mesaId, total: t });
                     } catch {}
                   } else {
                     await scheduleFetch();
@@ -345,11 +349,18 @@ export default function MesasScreen() {
         if (!base) return;
         const url = `${base}/sale/stream`;
         sse = new (window as any).EventSource(url);
-        setRealtimeConnected(true);
         sse.onmessage = async (evt: any) => {
           try {
             const msg = JSON.parse(String(evt?.data || '{}'));
-            if (msg?.type === 'sale:update') await scheduleFetch();
+            if (msg?.type === 'sale:update') {
+              console.log('[SSE] sale:update recebido');
+              setRealtimeConnected(true);
+              await scheduleFetch();
+            } else if (msg && (msg.id || msg.ts)) {
+              console.log('[SSE] payload simples recebido, agendando refresh');
+              setRealtimeConnected(true);
+              await scheduleFetch();
+            }
           } catch {}
         };
         sse.onerror = () => { try { sse.close(); } catch {}; setRealtimeConnected(false); };

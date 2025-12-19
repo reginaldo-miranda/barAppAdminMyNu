@@ -626,34 +626,48 @@ export default function CadastroProduto() {
               <Text style={styles.cardTitle}>Classificação</Text>
             </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Categoria *</Text>
-              <View style={[
-                styles.pickerContainer,
-                hasInteracted.categoria && validationErrors.categoria && styles.inputError
-              ]}>
-                <Picker
-                  selectedValue={categoriaId}
-                  onValueChange={(value) => handleFieldChange(setCategoriaId, value, 'categoria')}
-                  style={styles.picker}
-                  enabled={!loadingCategorias}
-                >
-                  <Picker.Item 
-                    label={loadingCategorias ? "Carregando categorias..." : "Selecione uma categoria"} 
-                    value="" 
-                  />
-                  {categorias.map((categoria) => (
-                    <Picker.Item
-                      key={categoria.id}
-                      label={categoria.nome}
-                      value={categoria.id}
+            <View style={styles.row}>
+              <View style={[styles.inputGroup, styles.halfWidth]}>
+                <Text style={styles.label}>Categoria *</Text>
+                <View style={[
+                  styles.pickerContainer,
+                  hasInteracted.categoria && validationErrors.categoria && styles.inputError
+                ]}>
+                  <Picker
+                    selectedValue={categoriaId}
+                    onValueChange={(value) => handleFieldChange(setCategoriaId, value, 'categoria')}
+                    style={styles.picker}
+                    enabled={!loadingCategorias}
+                  >
+                    <Picker.Item 
+                      label={loadingCategorias ? "Carregando categorias..." : "Selecione uma categoria"} 
+                      value="" 
                     />
-                  ))}
-                </Picker>
+                    {categorias.map((categoria) => (
+                      <Picker.Item
+                        key={categoria.id}
+                        label={categoria.nome}
+                        value={categoria.id}
+                      />
+                    ))}
+                  </Picker>
+                </View>
+                {hasInteracted.categoria && validationErrors.categoria && (
+                  <Text style={styles.errorText}>{validationErrors.categoria}</Text>
+                )}
               </View>
-              {hasInteracted.categoria && validationErrors.categoria && (
-                <Text style={styles.errorText}>{validationErrors.categoria}</Text>
-              )}
+              <View style={[styles.inputGroup, styles.halfWidth]}>
+                <Text style={styles.label}>Setor de Impressão</Text>
+                <TouchableOpacity
+                  style={styles.unidadeSelector}
+                  onPress={() => setShowSetoresModal(true)}
+                >
+                  <Text style={[styles.unidadeSelectorText, selectedSetores.length === 0 && styles.placeholderText]}>
+                    {selectedSetores.length > 0 ? setores.filter(s => selectedSetores.includes(String(s.id))).map(s => s.nome).join(', ') : 'Selecione setores'}
+                  </Text>
+                  <Ionicons name="chevron-down" size={20} color="#666" />
+                </TouchableOpacity>
+              </View>
             </View>
 
             <View style={styles.row}>
@@ -689,18 +703,6 @@ export default function CadastroProduto() {
                   <Ionicons name="chevron-down" size={20} color="#666" />
                 </TouchableOpacity>
               </View>
-            </View>
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Setor de Impressão</Text>
-              <TouchableOpacity
-                style={styles.unidadeSelector}
-                onPress={() => setShowSetoresModal(true)}
-              >
-                <Text style={[styles.unidadeSelectorText, selectedSetores.length === 0 && styles.placeholderText]}>
-                  {selectedSetores.length > 0 ? setores.filter(s => selectedSetores.includes(String(s.id))).map(s => s.nome).join(', ') : 'Selecione setores'}
-                </Text>
-                <Ionicons name="chevron-down" size={20} color="#666" />
-              </TouchableOpacity>
             </View>
           </View>
 
@@ -985,7 +987,7 @@ const styles = StyleSheet.create({
   },
   form: {
     padding: 8,
-    maxWidth: 600,
+    maxWidth: 900,
     alignSelf: 'center',
     width: '100%',
   },
