@@ -200,6 +200,37 @@ const ProductsDropdown: React.FC<ProductsDropdownProps> = ({ visible, onClose })
         },
       ],
     },
+    {
+      id: 'setores',
+      title: 'Setores',
+      description: 'Gerenciar setores de impressão',
+      icon: 'print-outline',
+      color: '#607D8B',
+      subItems: [
+        {
+          id: 'cadastro-setor',
+          title: 'Novo Setor',
+          description: 'Cadastrar novo setor',
+          icon: 'add-circle-outline',
+          color: '#607D8B',
+          onPress: () => {
+            router.push('/setores/cadastro' as any);
+            onClose();
+          },
+        },
+        {
+          id: 'listagem-setores',
+          title: 'Gerenciar Setores',
+          description: 'Visualizar e editar setores',
+          icon: 'list-outline',
+          color: '#607D8B',
+          onPress: () => {
+            router.push('/setores/listagem' as any);
+            onClose();
+          },
+        },
+      ],
+    },
   ];
 
   useEffect(() => {

@@ -393,9 +393,9 @@ export default function ListagemProdutos() {
         <View style={{ flexDirection: 'row' }}>
           <TouchableOpacity 
             onPress={async () => { await saveSelectedSector(); router.push('/setores/listagem' as any); }} 
-            style={styles.addButton}
+            style={[styles.addButton, { marginRight: 10 }]}
           >
-            <Ionicons name="print" size={24} color="#2196F3" />
+            <Ionicons name="list" size={24} color="#2196F3" />
           </TouchableOpacity>
           <TouchableOpacity 
             onPress={async () => { await saveSelectedSector(); router.push('/produtos/cadastro' as any); }} 

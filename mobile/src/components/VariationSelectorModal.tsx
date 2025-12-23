@@ -47,6 +47,9 @@ export default function VariationSelectorModal({ visible, product, onClose, onCo
       else resp = await variationTypeService.list();
       const arr = Array.isArray(resp?.data) ? resp.data : [];
       setTipos(arr as any);
+      if (arr.length === 1) {
+        setSelectedTipo(arr[0] as any);
+      }
     } catch (e) {
       setTipos([]);
     } finally {
