@@ -540,6 +540,14 @@ export const printerService = {
   delete: (id) => api.delete(`/printer/delete/${id}`),
 };
 
+export const variationTypeService = {
+  list: () => api.get('/variation-type/list'),
+  byCategoryId: (categoriaId) => api.get(`/variation-type/by-category/${categoriaId}`),
+  create: (data) => api.post('/variation-type/create', data),
+  update: (id, data) => api.put(`/variation-type/update/${id}`, data),
+  delete: (id) => api.delete(`/variation-type/delete/${id}`),
+};
+
 export const saleService = {
   create: (data) => api.post('/sale/create', data),
   addItem: (id, item) => api.post(`/sale/${id}/item`, item),

@@ -179,6 +179,13 @@ const mapSaleResponse = (venda) => {
           precoUnitario: Number(restItem.precoUnitario),
           subtotal: Number(restItem.subtotal),
           origem: String(restItem.origem || 'default'),
+          variacao: restItem.variacaoTipo
+            ? {
+                tipo: restItem.variacaoTipo,
+                regraPreco: restItem.variacaoRegraPreco,
+                opcoes: Array.isArray(restItem.variacaoOpcoes) ? restItem.variacaoOpcoes : []
+              }
+            : undefined,
         };
       })
     : venda.itens;
@@ -399,6 +406,7 @@ router.get('/:id', async (req, res) => {
     const prisma = getActivePrisma();
     const id = Number(req.params.id);
     const { produtoId, quantidade } = req.body;
+    const variacao = req.body?.variacao || null;
     const origemRaw = (req.body?.origem || req.headers['x-client-mode'] || '').toString().toLowerCase();
     const origem = origemRaw === 'tablet' ? 'tablet' : 'default';
     console.log('[SALE] POST /:id/item', { id, produtoId, quantidade });
@@ -427,29 +435,95 @@ router.get('/:id', async (req, res) => {
       return res.status(400).json({ error: 'Produto inativo' });
     }
 
-    const itemExistente = Array.isArray(venda.itens) ? venda.itens.find((i) => Number(i.productId) === prodId) : null;
-    if (itemExistente && origem !== 'tablet') {
+    const itemExistente = Array.isArray(venda.itens)
+      ? venda.itens.find((i) => Number(i.productId) === prodId)
+      : null;
+    const shouldMerge = !variacao && itemExistente && origem !== 'tablet';
+    if (shouldMerge) {
       const novaQtd = Number(itemExistente.quantidade || 0) + Number(quantidade || 1);
       await prisma.saleItem.update({
         where: { id: itemExistente.id },
         data: {
           quantidade: novaQtd,
-          subtotal: novaQtd * (itemExistente.precoUnitario ?? produto.precoVenda),
+          subtotal: String((Number(novaQtd) * Number(itemExistente.precoUnitario ?? produto.precoVenda)).toFixed(2)),
           status: 'pendente'
         }
       });
     } else {
+      let precoUnit = produto.precoVenda;
+      let variacaoTipo = null;
+      let variacaoRegra = null;
+      let variacaoOpcoes = null;
+      if (variacao) {
+        try {
+          const tipoId = Number(variacao?.tipoId);
+          const tipoNome = String(variacao?.tipoNome || '').trim();
+          let vt = null;
+          if (Number.isInteger(tipoId) && tipoId > 0) {
+            vt = await prisma.variationType.findUnique({ where: { id: tipoId } });
+          } else if (tipoNome) {
+            vt = await prisma.variationType.findFirst({ where: { nome: tipoNome } });
+          }
+          if (vt && vt.ativo === false) vt = null;
+          const opcoesArr = Array.isArray(variacao?.opcoes) ? variacao.opcoes : [];
+          const opcoesIds = opcoesArr.map((o) => Number(o?.productId ?? o)).filter((n) => Number.isInteger(n) && n > 0);
+          const maxAllowed = Number(vt?.maxOpcoes || variacao?.maxOpcoes || 1);
+          if (opcoesIds.length === 0 || opcoesIds.length > maxAllowed) {
+            return res.status(400).json({ error: 'Quantidade de opções inválida para a variação' });
+          }
+          const prods = await prisma.product.findMany({ where: { id: { in: opcoesIds }, ativo: true } });
+          if (prods.length !== opcoesIds.length) {
+            return res.status(400).json({ error: 'Opções de variação inválidas' });
+          }
+          if (vt && Array.isArray(vt.categoriasIds) && vt.categoriasIds.length > 0) {
+            const invalid = prods.some((p) => {
+              const cid = Number(p.categoriaId || 0);
+              return !vt.categoriasIds.includes(cid);
+            });
+            if (invalid) {
+              return res.status(400).json({ error: 'Opção fora das categorias aplicáveis' });
+            }
+          }
+          const precos = prods.map((p) => Number(p.precoVenda));
+          const fractions = opcoesArr.map((o) => Number(o?.fracao || 0)).filter((f) => Number.isFinite(f) && f > 0);
+          const regra = String(vt?.regraPreco || variacao?.regraPreco || 'mais_caro');
+          if (regra === 'mais_caro') {
+            precoUnit = Math.max(...precos);
+          } else if (regra === 'media') {
+            if (fractions.length === precos.length && fractions.length > 0) {
+              const wsum = precos.reduce((acc, n, i) => acc + n * fractions[i], 0);
+              const fsum = fractions.reduce((acc, f) => acc + f, 0);
+              precoUnit = fsum > 0 ? (wsum / fsum) : produto.precoVenda;
+            } else {
+              const sum = precos.reduce((acc, n) => acc + n, 0);
+              precoUnit = precos.length > 0 ? (sum / precos.length) : produto.precoVenda;
+            }
+          } else if (regra === 'fixo') {
+            const pf = vt?.precoFixo !== null && vt?.precoFixo !== undefined ? Number(vt.precoFixo) : Number(variacao?.precoFixo || 0);
+            precoUnit = pf > 0 ? pf : produto.precoVenda;
+          }
+          variacaoTipo = vt ? vt.nome : (tipoNome || null);
+          variacaoRegra = vt ? vt.regraPreco : regra;
+          variacaoOpcoes = prods.map((p, idx) => ({ productId: p.id, nome: p.nome, preco: Number(p.precoVenda), fracao: fractions[idx] || undefined }));
+        } catch (e) {
+          return res.status(400).json({ error: 'Erro ao processar variação' });
+        }
+      }
+      const qty = Number(quantidade || 1);
       await prisma.saleItem.create({
         data: {
           saleId: venda.id,
           productId: prodId,
           nomeProduto: produto.nome,
-          quantidade: Number(quantidade || 1),
-          precoUnitario: produto.precoVenda,
-          subtotal: Number(quantidade || 1) * produto.precoVenda,
+          quantidade: qty,
+          precoUnitario: String(Number(precoUnit).toFixed(2)),
+          subtotal: String(Number(qty * precoUnit).toFixed(2)),
           status: 'pendente',
           createdAt: new Date(),
-          origem
+          origem,
+          variacaoTipo: variacaoTipo || undefined,
+          variacaoRegraPreco: variacaoRegra || undefined,
+          variacaoOpcoes: variacaoOpcoes || undefined
         },
       });
     }

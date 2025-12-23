@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { productService, comandaService, categoryService } from '../services/api';
+import VariationSelectorModal from './VariationSelectorModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../services/storage';
 import SearchAndFilter from './SearchAndFilter';
@@ -87,6 +88,8 @@ export default function ProdutosComandaModal({ visible, onClose, comanda, onUpda
   const [selectedCategory, setSelectedCategory] = useState('');
   const [quantidade, setQuantidade] = useState(1);
   const [loadingItems, setLoadingItems] = useState<Set<string>>(new Set());
+  const [variationModalVisible, setVariationModalVisible] = useState(false);
+  const [variationProduct, setVariationProduct] = useState<ProdutoExtendido | null>(null);
   
   // Novos estados para os modais
   const [itensSelecionadosModalVisible, setItensSelecionadosModalVisible] = useState(false);
@@ -122,6 +125,7 @@ export default function ProdutosComandaModal({ visible, onClose, comanda, onUpda
         tipoId: p?.tipoId ?? undefined,
         grupo: p?.grupo ?? '',
         groupId: p?.groupId ?? undefined,
+        temVariacao: !!p?.temVariacao,
       }));
       console.log('📦 Produtos carregados:', normalized.length);
       setProdutos(normalized);
@@ -224,6 +228,12 @@ export default function ProdutosComandaModal({ visible, onClose, comanda, onUpda
       return;
     }
 
+    if ((produto as any)?.temVariacao) {
+      setVariationProduct(produto);
+      setVariationModalVisible(true);
+      return;
+    }
+
     // Adicionar produto ao loading
     setLoadingItems(prev => new Set(prev).add(produto._id));
     
@@ -277,6 +287,36 @@ export default function ProdutosComandaModal({ visible, onClose, comanda, onUpda
       Alert.alert('Erro', 'Não foi possível remover o item');
     } finally {
       // Remover produto do loading
+      setLoadingItems(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(produto._id);
+        return newSet;
+      });
+    }
+  };
+
+  const handleVariationConfirm = async (payload: { tipoId?: number; tipoNome?: string; regraPreco?: 'mais_caro'|'media'|'fixo'; maxOpcoes?: number; opcoes: Array<{ productId: number }>; precoFixo?: number }) => {
+    if (!comanda || !variationProduct?._id) {
+      Alert.alert('Erro', 'Dados inválidos');
+      return;
+    }
+    const produto = variationProduct;
+    setVariationModalVisible(false);
+    setVariationProduct(null);
+    setLoadingItems(prev => new Set(prev).add(produto._id));
+    const itemData: any = { produtoId: produto._id, quantidade: quantidade || 1, variacao: payload };
+    try {
+      try {
+        const cm = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
+        if (String(cm).toLowerCase() === 'tablet') itemData.origem = 'tablet';
+      } catch {}
+      await comandaService.addItem(comanda._id, itemData);
+      Alert.alert('Sucesso', `${produto.nome} (variação) adicionado à comanda!`);
+      onUpdateComanda();
+    } catch (error) {
+      console.error('Erro ao adicionar item com variação:', error);
+      Alert.alert('Erro', 'Não foi possível adicionar o item com variação');
+    } finally {
       setLoadingItems(prev => {
         const newSet = new Set(prev);
         newSet.delete(produto._id);
@@ -696,6 +736,24 @@ export default function ProdutosComandaModal({ visible, onClose, comanda, onUpda
           </View>
         </View>
       </Modal>
+      {variationProduct && (
+        <VariationSelectorModal
+          visible={variationModalVisible}
+          product={{
+            _id: String(variationProduct._id),
+            nome: variationProduct.nome,
+            descricao: variationProduct.descricao,
+            precoVenda: variationProduct.precoVenda,
+            categoria: variationProduct.categoria,
+            categoriaId: (variationProduct as any)?.categoriaId,
+            ativo: true,
+            disponivel: true,
+            temVariacao: true,
+          } as any}
+          onClose={() => { setVariationModalVisible(false); setVariationProduct(null); }}
+          onConfirm={handleVariationConfirm}
+        />
+      )}
     </Modal>
   );
 }

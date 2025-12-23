@@ -180,6 +180,26 @@ const ProductsDropdown: React.FC<ProductsDropdownProps> = ({ visible, onClose })
         },
       ],
     },
+    {
+      id: 'variacoes',
+      title: 'Variações',
+      description: 'Tipos de variação e regras de preço',
+      icon: 'options-outline',
+      color: '#795548',
+      subItems: [
+        {
+          id: 'tipos-variacao',
+          title: 'Tipos de Variação',
+          description: 'Gerenciar tipos de variação',
+          icon: 'list-outline',
+          color: '#795548',
+          onPress: () => {
+            router.push('/variacoes/tipos' as any);
+            onClose();
+          },
+        },
+      ],
+    },
   ];
 
   useEffect(() => {

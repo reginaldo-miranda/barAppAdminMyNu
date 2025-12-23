@@ -23,6 +23,7 @@ import AddProductToTable from '../src/components/AddProductToTable';
 import ScreenIdentifier from '../src/components/ScreenIdentifier';
 import { Sale, CartItem, PaymentMethod, Product } from '../src/types/index';
 import SaleItemsModal from '../src/components/SaleItemsModal';
+import VariationSelectorModal from '../src/components/VariationSelectorModal';
 
 export default function SaleScreen() {
   const { tipo, mesaId, vendaId, viewMode } = useLocalSearchParams();
@@ -42,6 +43,8 @@ export default function SaleScreen() {
   const isPhone = Dimensions.get('window').width < 768;
   const [initialItemsModalShown, setInitialItemsModalShown] = useState(false);
   const latestReqRef = useRef<Map<string, number>>(new Map());
+  const [variationVisible, setVariationVisible] = useState(false);
+  const [variationProduct, setVariationProduct] = useState<Product | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -322,6 +325,11 @@ export default function SaleScreen() {
     }
 
     try {
+      if ((product as any)?.temVariacao) {
+        setVariationProduct(product);
+        setVariationVisible(true);
+        return;
+      }
       // Adiciona o item no backend
       const itemData = {
         produtoId: parseInt(String((product as any)?._id ?? (product as any)?.id ?? 0), 10),
@@ -412,6 +420,28 @@ export default function SaleScreen() {
       
       // Mostra feedback visual de que o item foi adicionado
       Alert.alert('Sucesso', `${product.nome} foi adicionado ao carrinho!`);
+    }
+  };
+
+  const confirmVariation = async (payload: any) => {
+    try {
+      if (!sale || !variationProduct) return;
+      const itemData: any = {
+        produtoId: parseInt(String((variationProduct as any)?._id ?? (variationProduct as any)?.id ?? 0), 10),
+        quantidade: 1,
+        variacao: payload,
+      };
+      const clientMode = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
+      if (String(clientMode).toLowerCase() === 'tablet') itemData.origem = 'tablet';
+      const response = await saleService.addItem(sale._id, itemData);
+      setSale(response.data);
+      setCart(response.data.itens || []);
+      Alert.alert('Sucesso', `${variationProduct.nome} foi adicionado com variação!`);
+    } catch (e) {
+      Alert.alert('Erro', 'Não foi possível adicionar com variação');
+    } finally {
+      setVariationVisible(false);
+      setVariationProduct(null);
     }
   };
 
@@ -825,6 +855,13 @@ export default function SaleScreen() {
           onRemoveItem={removeFromCart}
         />
       )}
+
+      <VariationSelectorModal
+        visible={variationVisible}
+        product={variationProduct as any}
+        onClose={() => { setVariationVisible(false); setVariationProduct(null); }}
+        onConfirm={confirmVariation}
+      />
 
       {!isViewMode && cart.length > 0 && (
         <TouchableOpacity

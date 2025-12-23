@@ -20,6 +20,7 @@ const mapProduct = (p) => {
     quantidade: Number(p.quantidade || 0),
     ativo: !!p.ativo,
     disponivel: p.disponivel === undefined ? true : !!p.disponivel,
+    temVariacao: !!p.temVariacao,
     dadosFiscais: p.dadosFiscais || null,
     imagem: p.imagem || null,
     tempoPreparoMinutos: Number(p.tempoPreparoMinutos || 0),
@@ -43,7 +44,7 @@ router.get("/", async (req, res) => {
 router.post("/create", async (req, res) => {
   try {
     const prisma = getActivePrisma();
-    const { nome, descricao, preco, precoVenda, precoCusto, categoria, tipo, grupo, unidade, estoque, quantidade, estoqueMinimo, ativo, dadosFiscais, imagem, tempoPreparoMinutos, disponivel, categoriaId, tipoId, unidadeMedidaId, groupId, setoresImpressaoIds } = req.body;
+    const { nome, descricao, preco, precoVenda, precoCusto, categoria, tipo, grupo, unidade, estoque, quantidade, estoqueMinimo, ativo, dadosFiscais, imagem, tempoPreparoMinutos, disponivel, temVariacao, categoriaId, tipoId, unidadeMedidaId, groupId, setoresImpressaoIds } = req.body;
 
     const pv = precoVenda ?? preco ?? 0;
     const pc = precoCusto ?? 0;
@@ -79,7 +80,8 @@ router.post("/create", async (req, res) => {
         quantidade: Number(qtd) || 0,
         imagem,
         tempoPreparoMinutos: tempoPreparoMinutos ?? 0,
-        disponivel: disponivel ?? true
+        disponivel: disponivel ?? true,
+        temVariacao: temVariacao !== undefined ? !!temVariacao : false
       }
     });
 
@@ -293,7 +295,7 @@ router.put("/update/:id", async (req, res) => {
       return res.status(400).json({ error: "ID inválido" });
     }
 
-    const { nome, descricao, precoCusto, precoVenda, categoria, tipo, grupo, unidade, ativo, dadosFiscais, quantidade, imagem, tempoPreparoMinutos, disponivel, preco, estoque, categoriaId, tipoId, unidadeMedidaId, groupId, setoresImpressaoIds } = req.body;
+    const { nome, descricao, precoCusto, precoVenda, categoria, tipo, grupo, unidade, ativo, dadosFiscais, quantidade, imagem, tempoPreparoMinutos, disponivel, temVariacao, preco, estoque, categoriaId, tipoId, unidadeMedidaId, groupId, setoresImpressaoIds } = req.body;
     
     const updateData = {
       nome,
@@ -310,6 +312,7 @@ router.put("/update/:id", async (req, res) => {
       imagem,
       tempoPreparoMinutos,
       disponivel,
+      temVariacao: temVariacao !== undefined ? !!temVariacao : undefined,
       categoriaId: categoriaId !== undefined ? (Number.isInteger(Number(categoriaId)) ? Number(categoriaId) : undefined) : undefined,
       tipoId: tipoId !== undefined ? (Number.isInteger(Number(tipoId)) ? Number(tipoId) : undefined) : undefined,
       groupId: groupId !== undefined ? (Number.isInteger(Number(groupId)) ? Number(groupId) : undefined) : undefined,

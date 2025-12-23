@@ -51,6 +51,7 @@ model Product {
   imagem              String?
   tempoPreparoMinutos Int      @default(0)
   disponivel          Boolean  @default(true)
+  temVariacao         Boolean  @default(false)
   dataInclusao        DateTime @default(now())
   saleItems           SaleItem[]
   setoresImpressao    SetorImpressao[]
@@ -305,6 +306,9 @@ model SaleItem {
   subtotal      Decimal  @db.Decimal(10, 2)
   status        String   @default("pendente") @db.VarChar(20)
   origem        String?  @default("default") @db.VarChar(20)
+  variacaoTipo        String? @db.VarChar(50)
+  variacaoOpcoes      Json?
+  variacaoRegraPreco  RegraPreco?
   createdAt     DateTime @default(now())
   preparedAt    DateTime?
   preparedById  Int?
@@ -341,4 +345,21 @@ model CaixaVenda {
   valor          Decimal        @db.Decimal(10, 2)
   formaPagamento FormaPagamento
   dataVenda      DateTime
+}
+
+enum RegraPreco {
+  mais_caro
+  media
+  fixo
+}
+
+model VariationType {
+  id             Int        @id @default(autoincrement())
+  nome           String     @unique
+  maxOpcoes      Int        @default(1)
+  categoriasIds  Json?
+  regraPreco     RegraPreco @default(mais_caro)
+  precoFixo      Decimal?   @db.Decimal(10, 2)
+  ativo          Boolean    @default(true)
+  dataInclusao   DateTime   @default(now())
 }

@@ -74,6 +74,7 @@ const AddProductToTable: React.FC<AddProductToTableProps> = ({
         groupId: p?.groupId ?? undefined,
         unidade: p?.unidade ?? 'un',
         unidadeMedidaId: p?.unidadeMedidaId ?? undefined,
+        temVariacao: !!p?.temVariacao,
       }));
       setProducts(normalized as Product[]);
     } catch (error) {
@@ -278,6 +279,11 @@ const AddProductToTable: React.FC<AddProductToTableProps> = ({
     <View style={styles.saleItem}>
       <View style={styles.saleItemLeft}>
         <Text style={styles.saleItemName}>{item.nomeProduto}</Text>
+        {item.variacao && (
+          <Text style={styles.saleItemVariation} numberOfLines={2}>
+            {item.variacao.tipo}: {(Array.isArray(item.variacao.opcoes) ? item.variacao.opcoes.map((o) => o.nome) : []).join(' + ')}
+          </Text>
+        )}
         <Text style={styles.saleItemPrice}>
           R$ {item.precoUnitario?.toFixed(2) || '0.00'} cada
         </Text>
@@ -583,6 +589,10 @@ const styles = StyleSheet.create({
   saleItemPrice: {
     fontSize: 12,
     color: '#666',
+  },
+  saleItemVariation: {
+    fontSize: 11,
+    color: '#999',
   },
   saleItemActions: {
     flexDirection: 'row',

@@ -13,6 +13,11 @@ export interface CartItem {
   precoUnitario: number;
   subtotal: number;
   observacoes?: string;
+  variacao?: {
+    tipo: string;
+    regraPreco?: 'mais_caro' | 'media' | 'fixo';
+    opcoes: Array<{ productId: number; nome: string; preco: number }>;
+  };
 }
 
 export interface Sale {
@@ -38,12 +43,24 @@ export interface Product {
   tipoId?: number;
   unidade?: string;
   unidadeMedidaId?: number;
+  temVariacao?: boolean;
 }
 
 export interface PaymentMethod {
   key: string;
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
+}
+
+export interface VariationType {
+  _id: string;
+  id: number;
+  nome: string;
+  maxOpcoes: number;
+  categoriasIds?: number[];
+  regraPreco: 'mais_caro' | 'media' | 'fixo';
+  precoFixo?: number | null;
+  ativo: boolean;
 }
 
 export interface Comanda {

@@ -95,6 +95,7 @@ export default function CadastroProduto() {
   const [selectedSetores, setSelectedSetores] = useState<string[]>([]);
   const [loadingSetores, setLoadingSetores] = useState(false);
   const [showSetoresModal, setShowSetoresModal] = useState(false);
+  const [temVariacao, setTemVariacao] = useState(false);
 
   // Estados para feedback visual
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -301,6 +302,7 @@ export default function CadastroProduto() {
         setEstoque(produto.quantidade ? produto.quantidade.toString() : '0');
         setEstoqueMinimo('5'); // Valor padrão
         setAtivo(produto.ativo !== undefined ? produto.ativo : true);
+        setTemVariacao(!!(produto as any)?.temVariacao);
         setDataInclusao(produto.dataInclusao ? new Date(produto.dataInclusao) : new Date());
         setDataAlteracao(new Date());
         const sids = Array.isArray((produto as any)?.setoresImpressaoIds) ? (produto as any).setoresImpressaoIds.map((n: any) => String(n)) : [];
@@ -380,6 +382,7 @@ export default function CadastroProduto() {
         estoque: estoque ? parseInt(estoque) : 0,
         estoqueMinimo: estoqueMinimo ? parseInt(estoqueMinimo) : 0,
         ativo: ativo,
+        temVariacao: temVariacao,
         categoriaId: categoriaSelecionada ? Number(categoriaSelecionada.id) : undefined,
         tipoId: tipoSelecionado ? Number(tipoSelecionado.id) : undefined,
         unidadeMedidaId: unidadeSelecionada ? Number(unidadeSelecionada.id) : undefined,
@@ -703,6 +706,15 @@ export default function CadastroProduto() {
                   <Ionicons name="chevron-down" size={20} color="#666" />
                 </TouchableOpacity>
               </View>
+            </View>
+            <View style={styles.switchContainer}>
+              <Text style={styles.label}>Produto com variação</Text>
+              <Switch
+                value={temVariacao}
+                onValueChange={(value) => handleFieldChange(setTemVariacao, value)}
+                trackColor={{ false: '#ccc', true: '#4CAF50' }}
+                thumbColor={temVariacao ? '#fff' : '#f4f3f4'}
+              />
             </View>
           </View>
 

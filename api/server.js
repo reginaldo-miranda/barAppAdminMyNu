@@ -49,6 +49,7 @@ import setorImpressaoRoutes from "./routes/setorImpressao.js";
 import setorImpressaoQueueRoutes from "./routes/setorImpressaoQueue.js";
 import setoresRoutes from "./routes/setores.js";
 import printerRoutes from "./routes/printer.js";
+import variationTypeRoutes from "./routes/variationType.js";
 
 dotenv.config();
 
@@ -136,10 +137,46 @@ app.get('/api/admin/schema/diff', async (req, res) => {
 // Endpoint para correções rápidas de schema (uso interno em LAN)
 app.post('/api/admin/schema/fix', async (req, res) => {
   try {
+    // Garantir SaleItem.status como VARCHAR(20)
     await prisma.$executeRawUnsafe(
       "ALTER TABLE `SaleItem` MODIFY COLUMN `status` VARCHAR(20) NOT NULL DEFAULT 'pendente';"
     );
-    return res.json({ ok: true, message: 'Schema atualizado: SaleItem.status VARCHAR(20)' });
+
+    // Garantir Product.temVariacao
+    try {
+      const cols = await prisma.$queryRawUnsafe("SHOW COLUMNS FROM `Product` LIKE 'temVariacao'");
+      const exists = Array.isArray(cols) && cols.length > 0;
+      if (!exists) {
+        await prisma.$executeRawUnsafe("ALTER TABLE `Product` ADD COLUMN `temVariacao` TINYINT(1) NOT NULL DEFAULT 0");
+      }
+    } catch {}
+
+    // Garantir tabela VariationType
+    await prisma.$executeRawUnsafe(
+      "CREATE TABLE IF NOT EXISTS `VariationType` (\n        `id` INTEGER NOT NULL AUTO_INCREMENT,\n        `nome` VARCHAR(191) NOT NULL,\n        `maxOpcoes` INTEGER NOT NULL DEFAULT 1,\n        `categoriasIds` JSON NULL,\n        `regraPreco` ENUM('mais_caro','media','fixo') NOT NULL DEFAULT 'mais_caro',\n        `precoFixo` DECIMAL(10,2) NULL,\n        `ativo` TINYINT(1) NOT NULL DEFAULT 1,\n        `dataInclusao` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),\n        UNIQUE INDEX `VariationType_nome_key`(`nome`),\n        PRIMARY KEY (`id`)\n      ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    );
+
+    // Garantir colunas de variação em SaleItem
+    try {
+      const c1 = await prisma.$queryRawUnsafe("SHOW COLUMNS FROM `SaleItem` LIKE 'variacaoTipo'");
+      if (!Array.isArray(c1) || c1.length === 0) {
+        await prisma.$executeRawUnsafe("ALTER TABLE `SaleItem` ADD COLUMN `variacaoTipo` VARCHAR(50) NULL");
+      }
+    } catch {}
+    try {
+      const c2 = await prisma.$queryRawUnsafe("SHOW COLUMNS FROM `SaleItem` LIKE 'variacaoOpcoes'");
+      if (!Array.isArray(c2) || c2.length === 0) {
+        await prisma.$executeRawUnsafe("ALTER TABLE `SaleItem` ADD COLUMN `variacaoOpcoes` JSON NULL");
+      }
+    } catch {}
+    try {
+      const c3 = await prisma.$queryRawUnsafe("SHOW COLUMNS FROM `SaleItem` LIKE 'variacaoRegraPreco'");
+      if (!Array.isArray(c3) || c3.length === 0) {
+        await prisma.$executeRawUnsafe("ALTER TABLE `SaleItem` ADD COLUMN `variacaoRegraPreco` ENUM('mais_caro','media','fixo') NULL");
+      }
+    } catch {}
+
+    return res.json({ ok: true, message: 'Schema corrigido: Product.temVariacao + SaleItem.* + VariationType' });
   } catch (e) {
     console.error('Erro corrigindo schema:', e?.message || e);
     return res.status(500).json({ ok: false, error: String(e?.message || e) });
@@ -204,6 +241,7 @@ const authenticate = (req, res, next) => {
 app.use("/api/auth", authRoutes); // rotas públicas
 app.use("/api/customer", authenticate, customerRoutes);
 app.use("/api/product", authenticate, productRoutes);
+app.use("/api/variation-type", authenticate, variationTypeRoutes);
 app.use("/api/product-group", authenticate, productGroupRoutes);
 app.use("/api/employee", authenticate, employeeRoutes);
 app.use("/api/sale", authenticate, saleRoutes);
@@ -258,6 +296,21 @@ prisma.$connect()
     );
     await prisma.$executeRawUnsafe(
       "ALTER TABLE `SaleItem` ADD COLUMN IF NOT EXISTS `origem` VARCHAR(20) NULL DEFAULT 'default';"
+    );
+    await prisma.$executeRawUnsafe(
+      "ALTER TABLE `Product` ADD COLUMN IF NOT EXISTS `temVariacao` TINYINT(1) NOT NULL DEFAULT 0;"
+    );
+    await prisma.$executeRawUnsafe(
+      "CREATE TABLE IF NOT EXISTS `VariationType` (\n        `id` INTEGER NOT NULL AUTO_INCREMENT,\n        `nome` VARCHAR(191) NOT NULL,\n        `maxOpcoes` INTEGER NOT NULL DEFAULT 1,\n        `categoriasIds` JSON NULL,\n        `regraPreco` ENUM('mais_caro','media','fixo') NOT NULL DEFAULT 'mais_caro',\n        `precoFixo` DECIMAL(10,2) NULL,\n        `ativo` TINYINT(1) NOT NULL DEFAULT 1,\n        `dataInclusao` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),\n        UNIQUE INDEX `VariationType_nome_key`(`nome`),\n        PRIMARY KEY (`id`)\n      ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    );
+    await prisma.$executeRawUnsafe(
+      "ALTER TABLE `SaleItem` ADD COLUMN IF NOT EXISTS `variacaoTipo` VARCHAR(50) NULL;"
+    );
+    await prisma.$executeRawUnsafe(
+      "ALTER TABLE `SaleItem` ADD COLUMN IF NOT EXISTS `variacaoOpcoes` JSON NULL;"
+    );
+    await prisma.$executeRawUnsafe(
+      "ALTER TABLE `SaleItem` ADD COLUMN IF NOT EXISTS `variacaoRegraPreco` ENUM('mais_caro','media','fixo') NULL;"
     );
   } catch {}
 })();
