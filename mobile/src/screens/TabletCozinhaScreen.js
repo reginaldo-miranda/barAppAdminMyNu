@@ -390,9 +390,58 @@ const renderItem = ({ item }) => {
       <Animated.View style={[styles.itemContainer, urgencyStyle, { opacity: fadeAnim }]}> 
         <View style={styles.itemInfo}>
           <View style={styles.itemTopRow}>
-            <Text style={styles.itemTitle}>
-              {Number(item?.displayQty || 1)}x {item.produto}
-            </Text>
+            <View>
+              {(() => {
+                const rawName = String(item?.produto || '');
+                const parts = rawName.split(/\s+\/\s+/);
+                
+                // Priority 1: Use name parts if it looks like a composite name
+                if (parts.length > 1) {
+                  return parts.map((part, idx) => {
+                    const cleanPart = part.trim();
+                    const finalName = cleanPart.match(/^meio/i) ? cleanPart : `meio ${cleanPart}`;
+                    return (
+                      <Text key={`part-${idx}`} style={styles.itemTitle}>
+                        {idx === 0 ? `${Number(item?.displayQty || 1)}x ` : '    '}{finalName}
+                      </Text>
+                    );
+                  });
+                }
+
+                // Priority 2: Use variacaoOpcoes structure if available
+                if (Array.isArray(item?.variacaoOpcoes) && item.variacaoOpcoes.length > 0) {
+                   const options = [...item.variacaoOpcoes];
+                   const rawNameClean = rawName.replace(/^meio\s+/i, '').trim().toLowerCase();
+                   
+                   // Check if the main product name is effectively represented in options
+                   const hasMainInOptions = options.some(op => {
+                      const opName = String(op.nome || '').replace(/^meio\s+/i, '').trim().toLowerCase();
+                      return opName === rawNameClean;
+                   });
+
+                   // If main product is NOT in options, prepend it (assumes Base + Option structure for Meio a Meio)
+                   const itemsToDisplay = hasMainInOptions 
+                      ? options.map(o => String(o.nome || '')) 
+                      : [rawName, ...options.map(o => String(o.nome || ''))];
+
+                   return itemsToDisplay.map((nameRaw, idx) => {
+                     const cleanName = String(nameRaw).trim();
+                     const finalName = cleanName.match(/^meio/i) ? cleanName : `meio ${cleanName}`;
+                     return (
+                        <Text key={`opt-${idx}`} style={styles.itemTitle}>
+                          {idx === 0 ? `${Number(item?.displayQty || 1)}x ` : '    '}{finalName}
+                        </Text>
+                     );
+                   });
+                }
+                
+                return (
+                  <Text style={styles.itemTitle}>
+                    {Number(item?.displayQty || 1)}x {rawName}
+                  </Text>
+                );
+              })()}
+            </View>
             <View style={styles.itemMeta}>
               <Ionicons name="time" size={16} color="#333" />
               <Text style={styles.waitText}>{waiting} min</Text>

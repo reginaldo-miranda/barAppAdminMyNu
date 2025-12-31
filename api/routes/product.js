@@ -281,7 +281,10 @@ router.get("/:id", async (req, res) => {
     try {
       const rows = await prisma.$queryRawUnsafe(`SELECT setorId AS id FROM \`ProductSetorImpressao\` WHERE productId = ${id}`);
       setoresIds = Array.isArray(rows) ? rows.map(r => Number(r.id)).filter(n => Number.isInteger(n) && n > 0) : [];
-    } catch {}
+      console.log(`[DEBUG] Produto ${id} setores:`, setoresIds);
+    } catch (e) {
+      console.error('[DEBUG] Erro ao buscar setores do produto:', e);
+    }
     const mapped = mapProduct(product);
     res.json({ ...mapped, setoresImpressaoIds: setoresIds });
   } catch (error) {
@@ -327,13 +330,16 @@ router.put("/update/:id", async (req, res) => {
 
     try {
       if (Array.isArray(setoresImpressaoIds)) {
+        console.log(`[DEBUG] Atualizando setores do produto ${id}:`, setoresImpressaoIds);
         await prisma.$executeRawUnsafe(`DELETE FROM \`ProductSetorImpressao\` WHERE productId = ${id}`);
         const ids = setoresImpressaoIds.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0);
         for (const sid of ids) {
           await prisma.$executeRawUnsafe(`INSERT IGNORE INTO \`ProductSetorImpressao\` (productId, setorId) VALUES (${id}, ${sid})`);
         }
       }
-    } catch {}
+    } catch (e) {
+      console.error('[DEBUG] Erro ao atualizar setores:', e);
+    }
     
     res.json({ message: 'Produto atualizado com sucesso', product: updatedProduct });
   } catch (error) {
