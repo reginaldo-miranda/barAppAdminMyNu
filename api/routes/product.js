@@ -24,6 +24,10 @@ const mapProduct = (p) => {
     dadosFiscais: p.dadosFiscais || null,
     imagem: p.imagem || null,
     tempoPreparoMinutos: Number(p.tempoPreparoMinutos || 0),
+    categoriaId: p.categoriaId || null,
+    tipoId: p.tipoId || null,
+    groupId: p.groupId || null,
+    unidadeMedidaId: p.unidadeMedidaId || null,
     dataInclusao: p.dataInclusao,
   };
 };

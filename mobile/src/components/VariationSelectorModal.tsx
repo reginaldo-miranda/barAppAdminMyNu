@@ -62,9 +62,12 @@ export default function VariationSelectorModal({ visible, product, onClose, onCo
       setLoadingOptions(true);
       const r = await productService.getAll();
       const all = Array.isArray(r?.data) ? r.data : [];
-      const ids = Array.isArray(tipo?.categoriasIds) ? tipo.categoriasIds : [];
+      const ids = Array.isArray(tipo?.categoriasIds) ? tipo.categoriasIds.map(Number) : [];
       const filtered = ids.length > 0
-        ? all.filter((p: any) => Number(p?.categoriaId || 0) && ids.includes(Number(p.categoriaId)))
+        ? all.filter((p: any) => {
+            const catId = Number(p?.categoriaId || p?.categoria || 0);
+            return Number.isInteger(catId) && ids.includes(catId);
+          })
         : all;
       const normalized = filtered.filter((p: any) => !!p?.ativo && !!p?.disponivel).map((p: any) => ({
         _id: String(p?._id ?? p?.id ?? ''),
@@ -236,41 +239,50 @@ export default function VariationSelectorModal({ visible, product, onClose, onCo
           <Text style={styles.summaryValue}>R$ {precoCalculado.toFixed(2)}</Text>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Tipo de Variação</Text>
-          {loadingTipos ? (
-            <View style={styles.loadingBox}><ActivityIndicator size="small" color="#2196F3" /><Text style={styles.loadingText}>Carregando tipos...</Text></View>
-          ) : (
-            <FlatList data={tipos} renderItem={renderTipo} keyExtractor={(it) => String(it.id)} showsVerticalScrollIndicator={false} />
-          )}
-        </View>
-
-        {selectedTipo && (
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Seleção de Sabores ({selectedOpcoes.length}/{selectedTipo.maxOpcoes})</Text>
-            <View style={styles.searchBar}>
-              <Ionicons name="search" size={18} color="#666" />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Buscar opções..."
-                value={searchText}
-                onChangeText={setSearchText}
-                placeholderTextColor="#999"
-              />
-            </View>
-            {loadingOptions ? (
-              <View style={styles.loadingBox}><ActivityIndicator size="small" color="#2196F3" /><Text style={styles.loadingText}>Carregando opções...</Text></View>
+            <Text style={styles.sectionTitle}>Tipo de Variação</Text>
+            {loadingTipos ? (
+              <View style={styles.loadingBox}><ActivityIndicator size="small" color="#2196F3" /><Text style={styles.loadingText}>Carregando tipos...</Text></View>
             ) : (
-              <FlatList
-                data={displayedOptions}
-                renderItem={renderOpcao}
-                keyExtractor={(it, idx) => String((it as any)?._id ?? (it as any)?.id ?? idx)}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ paddingBottom: 8 }}
+              <FlatList 
+                data={tipos} 
+                renderItem={renderTipo} 
+                keyExtractor={(it) => String(it.id)} 
+                scrollEnabled={false}
+                showsVerticalScrollIndicator={false} 
               />
             )}
           </View>
-        )}
+
+          {selectedTipo && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Seleção de Sabores ({selectedOpcoes.length}/{selectedTipo.maxOpcoes})</Text>
+              <View style={styles.searchBar}>
+                <Ionicons name="search" size={18} color="#666" />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Buscar opções..."
+                  value={searchText}
+                  onChangeText={setSearchText}
+                  placeholderTextColor="#999"
+                />
+              </View>
+              {loadingOptions ? (
+                <View style={styles.loadingBox}><ActivityIndicator size="small" color="#2196F3" /><Text style={styles.loadingText}>Carregando opções...</Text></View>
+              ) : (
+                <FlatList
+                  data={displayedOptions}
+                  renderItem={renderOpcao}
+                  keyExtractor={(it, idx) => String((it as any)?._id ?? (it as any)?.id ?? idx)}
+                  scrollEnabled={false}
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={{ paddingBottom: 8 }}
+                />
+              )}
+            </View>
+          )}
+        </ScrollView>
 
         <View style={styles.footer}>
           <View style={styles.totalBox}>

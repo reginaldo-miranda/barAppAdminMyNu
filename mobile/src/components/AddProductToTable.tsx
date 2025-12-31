@@ -278,15 +278,38 @@ const AddProductToTable: React.FC<AddProductToTableProps> = ({
   const renderSaleItem = ({ item }: { item: CartItem }) => (
     <View style={styles.saleItem}>
       <View style={styles.saleItemLeft}>
-        <Text style={styles.saleItemName}>{item.nomeProduto}</Text>
-        {item.variacao && (
-          <Text style={styles.saleItemVariation} numberOfLines={2}>
-            {item.variacao.tipo}: {(Array.isArray(item.variacao.opcoes) ? item.variacao.opcoes.map((o) => o.nome) : []).join(' + ')}
-          </Text>
+        {item.variacao && (item.variacao.regraPreco === 'mais_caro' || item.variacao.regraPreco === 'media') ? (
+          <View>
+            {/* Se tiver apenas 1 opção ou menos, o produto base conta como a primeira metade */}
+            {(!item.variacao.opcoes || item.variacao.opcoes.length <= 1) && (
+              <Text style={styles.saleItemName}>
+                {item.nomeProduto.match(/^meio/i) ? item.nomeProduto : `meio ${item.nomeProduto}`}
+              </Text>
+            )}
+            {/* Lista as opções selecionadas (a outra metade ou todas se forem várias) */}
+            {(Array.isArray(item.variacao.opcoes) ? item.variacao.opcoes : []).map((o, idx) => (
+              <Text key={idx} style={styles.saleItemName}>
+                {o.nome.match(/^meio/i) ? o.nome : `meio ${o.nome}`}
+              </Text>
+            ))}
+          </View>
+        ) : (
+          <>
+            <Text style={styles.saleItemName}>{item.nomeProduto}</Text>
+            {item.variacao && (
+              <View style={{ marginTop: 2 }}>
+                {(Array.isArray(item.variacao.opcoes) ? item.variacao.opcoes : []).map((o, idx) => (
+                  <Text key={idx} style={{ fontSize: 13, color: '#555', marginLeft: 0 }}>
+                    {o.nome}
+                  </Text>
+                ))}
+              </View>
+            )}
+            <Text style={styles.saleItemPrice}>
+              R$ {item.precoUnitario?.toFixed(2) || '0.00'} cada
+            </Text>
+          </>
         )}
-        <Text style={styles.saleItemPrice}>
-          R$ {item.precoUnitario?.toFixed(2) || '0.00'} cada
-        </Text>
       </View>
       
       <View style={styles.saleItemRight}>

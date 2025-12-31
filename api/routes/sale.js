@@ -505,7 +505,14 @@ router.get('/:id', async (req, res) => {
           variacaoTipo = vt ? vt.nome : (tipoNome || null);
           variacaoRegra = vt ? vt.regraPreco : regra;
           variacaoOpcoes = prods.map((p, idx) => ({ productId: p.id, nome: p.nome, preco: Number(p.precoVenda), fracao: fractions[idx] || undefined }));
+          
+          // Construir nome do produto concatenado (Ex: Meio Calabresa / Meio Frango)
+          if (variacaoOpcoes.length > 1) {
+            const nomesConcatenados = variacaoOpcoes.map(o => `meio ${o.nome}`).join(' / ');
+            produto.nome = nomesConcatenados;
+          }
         } catch (e) {
+          console.error('Erro ao processar variação no backend:', e);
           return res.status(400).json({ error: 'Erro ao processar variação' });
         }
       }
