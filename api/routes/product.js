@@ -326,20 +326,40 @@ router.put("/update/:id", async (req, res) => {
       unidadeMedidaId: unidadeMedidaId !== undefined ? (Number.isInteger(Number(unidadeMedidaId)) ? Number(unidadeMedidaId) : undefined) : undefined
     };
 
+    // Log payload for debugging
+    console.log(`[DEBUG] Update Product ${id} payload sectors:`, setoresImpressaoIds);
+
     const updatedProduct = await prisma.product.update({ where: { id }, data: updateData });
 
-    try {
-      if (Array.isArray(setoresImpressaoIds)) {
-        console.log(`[DEBUG] Atualizando setores do produto ${id}:`, setoresImpressaoIds);
-        await prisma.$executeRawUnsafe(`DELETE FROM \`ProductSetorImpressao\` WHERE productId = ${id}`);
-        const ids = setoresImpressaoIds.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0);
-        for (const sid of ids) {
-          await prisma.$executeRawUnsafe(`INSERT IGNORE INTO \`ProductSetorImpressao\` (productId, setorId) VALUES (${id}, ${sid})`);
+    // Atualização de setores com transação para evitar perda de dados
+    if (Array.isArray(setoresImpressaoIds)) {
+      const ids = setoresImpressaoIds.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0);
+      
+      // SAFETY CHECK: A pedido do usuário para evitar "apagar dados", 
+      // só vamos atualizar os setores se houver IDs válidos na lista.
+      // Se a lista vier vazia (ids.length === 0), assumimos que pode ser um erro de carregamento do frontend
+      // e IGNORAMOS a atualização para proteger os dados existentes.
+      if (ids.length > 0) {
+        console.log(`[DEBUG] Atualizando setores do produto ${id} com transação. IDs:`, ids);
+        try {
+          await prisma.$transaction(async (tx) => {
+            // 1. Remover associações antigas
+            await tx.$executeRawUnsafe(`DELETE FROM \`ProductSetorImpressao\` WHERE productId = ${id}`);
+            
+            // 2. Inserir novas associações
+            for (const sid of ids) {
+              await tx.$executeRawUnsafe(`INSERT INTO \`ProductSetorImpressao\` (productId, setorId) VALUES (${id}, ${sid})`);
+            }
+          });
+          console.log(`[DEBUG] Setores do produto ${id} atualizados com sucesso.`);
+        } catch (txError) {
+          console.error(`[DEBUG] Falha na transação de atualização de setores do produto ${id}:`, txError);
         }
+      } else {
+         console.warn(`[DEBUG] Lista de setores vazia recebida para produto ${id}. Ignorando atualização para evitar perda de dados (Safety Check).`);
       }
-    } catch (e) {
-      console.error('[DEBUG] Erro ao atualizar setores:', e);
     }
+
     
     res.json({ message: 'Produto atualizado com sucesso', product: updatedProduct });
   } catch (error) {

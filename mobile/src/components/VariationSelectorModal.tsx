@@ -12,9 +12,10 @@ interface VariationSelectorModalProps {
   product: Product | null;
   onClose: () => void;
   onConfirm: (payload: { tipoId?: number; tipoNome?: string; regraPreco?: 'mais_caro'|'media'|'fixo'; maxOpcoes?: number; opcoes: Array<{ productId: number }>; precoFixo?: number }) => void;
+  onConfirmWhole?: () => void;
 }
 
-export default function VariationSelectorModal({ visible, product, onClose, onConfirm }: VariationSelectorModalProps) {
+export default function VariationSelectorModal({ visible, product, onClose, onConfirm, onConfirmWhole }: VariationSelectorModalProps) {
   const [tipos, setTipos] = useState<VariationType[]>([]);
   const [loadingTipos, setLoadingTipos] = useState(false);
   const [selectedTipo, setSelectedTipo] = useState<VariationType | null>(null);
@@ -291,6 +292,12 @@ export default function VariationSelectorModal({ visible, product, onClose, onCo
           </View>
           <View style={styles.footerButtons}>
             <TouchableOpacity style={styles.cancelButton} onPress={onClose}><Text style={styles.cancelButtonText}>Cancelar</Text></TouchableOpacity>
+            {onConfirmWhole && (
+              <TouchableOpacity style={styles.wholeButton} onPress={onConfirmWhole}>
+                <Ionicons name="pricetag-outline" size={16} color="#2196F3" style={{ marginRight: 4 }} />
+                <Text style={styles.wholeButtonText}>Inteiro</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={[styles.confirmButton, (!canConfirm) && styles.confirmButtonDisabled]} onPress={handleConfirm} disabled={!canConfirm}>
               <Ionicons name="checkmark" size={18} color="#fff" />
               <Text style={styles.confirmButtonText}>Confirmar</Text>
@@ -345,6 +352,8 @@ const styles = StyleSheet.create({
   footerButtons: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cancelButton: { paddingVertical: 10, paddingHorizontal: 16, borderWidth: 1, borderColor: '#ddd', borderRadius: 8 },
   cancelButtonText: { color: '#333', fontSize: 14 },
+  wholeButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16, borderWidth: 1, borderColor: '#2196F3', borderRadius: 8, backgroundColor: '#e3f2fd' },
+  wholeButtonText: { color: '#2196F3', fontSize: 14, fontWeight: 'bold' },
   confirmButton: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 16, backgroundColor: '#4CAF50', borderRadius: 8 },
   confirmButtonDisabled: { backgroundColor: '#a5d6a7' },
   confirmButtonText: { color: '#fff', fontSize: 14, fontWeight: 'bold' },

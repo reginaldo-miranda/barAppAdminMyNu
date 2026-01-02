@@ -325,6 +325,38 @@ export default function ProdutosComandaModal({ visible, onClose, comanda, onUpda
     }
   };
 
+  const handleVariationConfirmWhole = async () => {
+      if (!comanda || !variationProduct?._id) {
+        Alert.alert('Erro', 'Dados inválidos');
+        return;
+      }
+      const produto = variationProduct;
+      setVariationModalVisible(false);
+      setVariationProduct(null);
+      setLoadingItems(prev => new Set(prev).add(produto._id));
+      
+      const itemData: any = { produtoId: produto._id, quantidade: quantidade || 1 };
+      
+      try {
+        try {
+          const cm = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
+          if (String(cm).toLowerCase() === 'tablet') itemData.origem = 'tablet';
+        } catch {}
+        await comandaService.addItem(comanda._id, itemData);
+        Alert.alert('Sucesso', `${produto.nome} adicionado inteiro!`);
+        onUpdateComanda();
+      } catch (error) {
+        console.error('Erro ao adicionar item inteiro:', error);
+        Alert.alert('Erro', 'Não foi possível adicionar o item');
+      } finally {
+        setLoadingItems(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(produto._id);
+          return newSet;
+        });
+      }
+    };
+
   // Função para incrementar quantidade no modal de itens selecionados
   const incrementarQuantidadeItem = async (item: CartItem) => {
     if (!comanda || !item?.produto?._id) {
@@ -752,6 +784,7 @@ export default function ProdutosComandaModal({ visible, onClose, comanda, onUpda
           } as any}
           onClose={() => { setVariationModalVisible(false); setVariationProduct(null); }}
           onConfirm={handleVariationConfirm}
+          onConfirmWhole={handleVariationConfirmWhole}
         />
       )}
     </Modal>

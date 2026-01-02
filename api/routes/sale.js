@@ -435,21 +435,32 @@ router.get('/:id', async (req, res) => {
       return res.status(400).json({ error: 'Produto inativo' });
     }
 
+    // Busca item pendente idêntico (mesmo produto e SEM variação)
     const itemExistente = Array.isArray(venda.itens)
-      ? venda.itens.find((i) => Number(i.productId) === prodId)
+      ? venda.itens.find((i) => {
+          const sameProduct = Number(i.productId) === prodId;
+          const isPendente = i.status === 'pendente';
+          // Garante que o item existente não tenha variação (nem tipo, nem opções)
+          // Isso evita mesclar um produto simples com um que já tem variação
+          const hasNoVariation = !i.variacaoTipo && (!i.variacaoOpcoes || (Array.isArray(i.variacaoOpcoes) && i.variacaoOpcoes.length === 0));
+          
+          return sameProduct && isPendente && hasNoVariation;
+      })
       : null;
-    const shouldMerge = !variacao && itemExistente && origem !== 'tablet';
+      
+    // Só faz merge se o payload atual TAMBÉM não tiver variação e encontrarmos um item compatível
+    const shouldMerge = !variacao && itemExistente;
     if (shouldMerge) {
       const novaQtd = Number(itemExistente.quantidade || 0) + Number(quantidade || 1);
       await prisma.saleItem.update({
         where: { id: itemExistente.id },
         data: {
           quantidade: novaQtd,
-          subtotal: String((Number(novaQtd) * Number(itemExistente.precoUnitario ?? produto.precoVenda)).toFixed(2)),
-          status: 'pendente'
+          subtotal: String((Number(novaQtd) * Number(itemExistente.precoUnitario ?? produto.precoVenda)).toFixed(2))
         }
       });
     } else {
+      // ... create new item code (unchanged blocks follow, just ensuring I don't break the else block structure)
       let precoUnit = produto.precoVenda;
       let variacaoTipo = null;
       let variacaoRegra = null;
@@ -506,7 +517,6 @@ router.get('/:id', async (req, res) => {
           variacaoRegra = vt ? vt.regraPreco : regra;
           variacaoOpcoes = prods.map((p, idx) => ({ productId: p.id, nome: p.nome, preco: Number(p.precoVenda), fracao: fractions[idx] || undefined }));
           
-          // Construir nome do produto concatenado (Ex: Meio Calabresa / Meio Frango)
           // Construir nome do produto concatenado (Ex: Meio Calabresa / Meio Frango)
           if (variacaoOpcoes.length > 1) {
             const nomesConcatenados = variacaoOpcoes.map(o => `meio ${o.nome}`).join(' / ');
@@ -678,12 +688,17 @@ router.delete('/:id/item/:produtoId', async (req, res) => {
     }
 
     let item = venda.itens.find(i => i.productId === prodId);
-    if (origem === 'tablet') {
+    // Prioritize lookup by unique Item ID if provided
+    if (itemId) {
+      const byId = venda.itens.find(i => i.id === Number(itemId));
+      if (byId && byId.productId === prodId) {
+        item = byId;
+      }
+    } 
+    // Fallback for tablet mode logic (if no ID provided or strictly obeying old logic)
+    else if (origem === 'tablet') {
       const tabletItens = venda.itens.filter(i => i.productId === prodId && String(i.origem || '') === 'tablet');
-      if (itemId) {
-        const byId = venda.itens.find(i => i.id === Number(itemId));
-        if (byId && byId.productId === prodId) item = byId;
-      } else if (tabletItens.length > 0) {
+      if (tabletItens.length > 0) {
         item = tabletItens.sort((a,b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()).pop();
       }
     }
@@ -700,10 +715,40 @@ router.delete('/:id/item/:produtoId', async (req, res) => {
         data: { quantidade: qnt, subtotal: qnt * item.precoUnitario },
       });
     } else {
-      await prisma.saleItem.update({
-        where: { id: item.id },
-        data: { quantidade: qnt, subtotal: qnt * item.precoUnitario, status: 'pendente' },
-      });
+      // Se o item já foi processado (não está pendente), não podemos misturar o status.
+      // Devemos criar um NOVO item para o incremento (delta).
+      if (item.status && item.status !== 'pendente') {
+          console.log('[SALE] Incremento em item processado. Criando novo item com qty:', delta);
+          // Clonar os dados do item original
+          await prisma.saleItem.create({
+            data: {
+              saleId: venda.id,
+              productId: item.productId,
+              nomeProduto: item.nomeProduto,
+              quantidade: delta,
+              precoUnitario: item.precoUnitario, // Mantém preço da época ou original
+              subtotal: String((Number(delta) * Number(item.precoUnitario)).toFixed(2)),
+              status: 'pendente', // Novo item nasce pendente
+              createdAt: new Date(),
+              origem: origem === 'tablet' ? 'tablet' : 'default',
+              variacaoTipo: item.variacaoTipo,
+              variacaoRegraPreco: item.variacaoRegraPreco,
+              variacaoOpcoes: item.variacaoOpcoes
+            },
+          });
+          // O item original permanece inalterado (ou talvez precisasse ser atualizado se o delta fosse parcial, mas aqui assumimos incremento total do contador visual)
+          // Na verdade, o frontend mandou quantidade TOTAL (ex: era 2 virou 3).
+          // Se eu crio um novo item de 1, o item original deve permanecer com 2.
+          // O frontend vai receber a lista atualizada com 2 itens: um de 2 e um de 1.
+          
+          // Nenhuma alteração no item original necessária.
+      } else {
+        // Item ainda está pendente, podemos apenas somar
+        await prisma.saleItem.update({
+          where: { id: item.id },
+          data: { quantidade: qnt, subtotal: qnt * item.precoUnitario, status: 'pendente' },
+        });
+      }
     }
 
     const vendaAtualizada = await prisma.sale.findUnique({

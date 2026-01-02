@@ -305,7 +305,12 @@ export default function CadastroProduto() {
         setTemVariacao(!!(produto as any)?.temVariacao);
         setDataInclusao(produto.dataInclusao ? new Date(produto.dataInclusao) : new Date());
         setDataAlteracao(new Date());
-        const sids = Array.isArray((produto as any)?.setoresImpressaoIds) ? (produto as any).setoresImpressaoIds.map((n: any) => String(n)) : [];
+        const rawSids = (produto as any)?.setoresImpressaoIds;
+        let sids: string[] = [];
+        if (Array.isArray(rawSids)) {
+          sids = rawSids.map((n: any) => String(n));
+        }
+        console.log('[DEBUG] loadProduct setores (raw):', rawSids, 'mapped:', sids);
         setSelectedSetores(sids);
       } else {
         setLoadError('Produto não encontrado.');
@@ -346,6 +351,7 @@ export default function CadastroProduto() {
   }
 
   const handleSave = async () => {
+    console.log('[DEBUG] handleSave setores:', selectedSetores);
     // Marcar todos os campos como interagidos para mostrar erros
     setHasInteracted({
       nome: true,

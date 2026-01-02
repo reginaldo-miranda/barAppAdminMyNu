@@ -389,7 +389,7 @@ export default function SaleScreen() {
       const isTabletMode = String(clientMode).toLowerCase() === 'tablet';
       setCart(prevCart => {
         const exists = prevCart.find(item => item.produto && item.produto._id === product._id);
-        if (exists && !isTabletMode) {
+        if (exists) {
           return prevCart.map(item => {
             if (item.produto && item.produto._id === product._id) {
               const newQuantity = item.quantidade + 1;
@@ -439,6 +439,27 @@ export default function SaleScreen() {
       Alert.alert('Sucesso', `${variationProduct.nome} foi adicionado com variação!`);
     } catch (e) {
       Alert.alert('Erro', 'Não foi possível adicionar com variação');
+    } finally {
+      setVariationVisible(false);
+      setVariationProduct(null);
+    }
+  };
+
+  const confirmVariationWhole = async () => {
+    try {
+      if (!sale || !variationProduct) return;
+      const itemData: any = {
+        produtoId: parseInt(String((variationProduct as any)?._id ?? (variationProduct as any)?.id ?? 0), 10),
+        quantidade: 1,
+      };
+      const clientMode = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
+      if (String(clientMode).toLowerCase() === 'tablet') itemData.origem = 'tablet';
+      const response = await saleService.addItem(sale._id, itemData);
+      setSale(response.data);
+      setCart(response.data.itens || []);
+      Alert.alert('Sucesso', `${variationProduct.nome} foi adicionado inteiro!`);
+    } catch (e) {
+      Alert.alert('Erro', 'Não foi possível adicionar o produto.');
     } finally {
       setVariationVisible(false);
       setVariationProduct(null);
@@ -547,31 +568,30 @@ export default function SaleScreen() {
       latestReqRef.current.set(key, reqSeq);
       let response;
             if (isIncrement) {
-              const clientMode = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
-              const isTabletMode = String(clientMode).toLowerCase() === 'tablet';
-              const opts = isTabletMode ? { itemId: Number((item as any)?.id || (item as any)?._id) || undefined, origem: 'tablet' } : undefined;
+              // Unificado: Incremento sempre atualiza a quantidade do item existente
+              // Passamos itemId explicitamente para garantir que o backend atualize a linha correta
+              const opts = { itemId: Number((item as any)?.id || (item as any)?._id) || undefined };
+              
               if (tipo === 'comanda') {
                 response = await comandaService.updateItemQuantity(sale._id, parseInt(String(produtoId), 10), clampedQty, opts);
               } else {
                 response = await saleService.updateItemQuantity(sale._id, parseInt(String(produtoId), 10), clampedQty, opts);
               }
             } else if (clampedQty <= 0) {
-              // Remover item por completo via API (sem confirmação)
+              // Remover item
               console.log('[Sale] remove item', { produtoId });
-              const clientMode = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
-              const isTabletMode = String(clientMode).toLowerCase() === 'tablet';
-              const opts = isTabletMode ? { itemId: Number((item as any)?.id || (item as any)?._id) || undefined, origem: 'tablet' } : undefined;
+              const opts = { itemId: Number((item as any)?.id || (item as any)?._id) || undefined };
+              
               if (tipo === 'comanda') {
                 response = await comandaService.removeItem(sale._id, parseInt(String(produtoId), 10), opts);
               } else {
                 response = await saleService.removeItem(sale._id, parseInt(String(produtoId), 10), opts);
               }
             } else if (isDecrement) {
-              // Decremento: atualizar quantidade absoluta
+              // Decremento
               console.log('[Sale] decrement to', { quantidade: clampedQty });
-              const clientMode = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
-              const isTabletMode = String(clientMode).toLowerCase() === 'tablet';
-              const opts = isTabletMode ? { itemId: Number((item as any)?.id || (item as any)?._id) || undefined, origem: 'tablet' } : undefined;
+              const opts = { itemId: Number((item as any)?.id || (item as any)?._id) || undefined };
+              
               if (tipo === 'comanda') {
                 response = await comandaService.updateItemQuantity(sale._id, parseInt(String(produtoId), 10), clampedQty, opts);
               } else {
@@ -861,6 +881,7 @@ export default function SaleScreen() {
         product={variationProduct as any}
         onClose={() => { setVariationVisible(false); setVariationProduct(null); }}
         onConfirm={confirmVariation}
+        onConfirmWhole={confirmVariationWhole}
       />
 
       {!isViewMode && cart.length > 0 && (

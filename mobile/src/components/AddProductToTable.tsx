@@ -275,23 +275,47 @@ const AddProductToTable: React.FC<AddProductToTableProps> = ({
     </View>
   );
 
-  const renderSaleItem = ({ item }: { item: CartItem }) => (
+  const renderSaleItem = ({ item, customUpdateHandler }: { item: CartItem, customUpdateHandler?: any }) => (
     <View style={styles.saleItem}>
       <View style={styles.saleItemLeft}>
         {item.variacao && (item.variacao.regraPreco === 'mais_caro' || item.variacao.regraPreco === 'media') ? (
           <View>
-            {/* Se tiver apenas 1 opção ou menos, o produto base conta como a primeira metade */}
-            {(!item.variacao.opcoes || item.variacao.opcoes.length <= 1) && (
-              <Text style={styles.saleItemName}>
-                {item.nomeProduto.match(/^meio/i) ? item.nomeProduto : `meio ${item.nomeProduto}`}
-              </Text>
-            )}
-            {/* Lista as opções selecionadas (a outra metade ou todas se forem várias) */}
-            {(Array.isArray(item.variacao.opcoes) ? item.variacao.opcoes : []).map((o, idx) => (
-              <Text key={idx} style={styles.saleItemName}>
-                {o.nome.match(/^meio/i) ? o.nome : `meio ${o.nome}`}
-              </Text>
-            ))}
+            {(() => {
+               // Logic to ensure both halves are displayed, similar to TabletCozinhaScreen
+               const options = Array.isArray(item.variacao.opcoes) ? [...item.variacao.opcoes] : [];
+               
+               // Clean the main name to check if it exists in options
+               const rawNameClean = item.nomeProduto.replace(/^meio\s+/i, '').trim().toLowerCase();
+               const hasMainInOptions = options.some(op => {
+                  const opName = String(op.nome || '').replace(/^meio\s+/i, '').trim().toLowerCase();
+                  return opName === rawNameClean;
+               });
+               
+               // Construct the list of items to display
+               const itemsToDisplay = [];
+               
+               // If the main product name isn't in options, add it as the first "half"
+               if (!hasMainInOptions && options.length > 0) {
+                 const mainName = item.nomeProduto.match(/^meio/i) ? item.nomeProduto : `meio ${item.nomeProduto}`;
+                 itemsToDisplay.push(mainName);
+               } else if (options.length <= 1 && !hasMainInOptions) {
+                  // Fallback for single item or weird state: show main product as half if applicable
+                   const mainName = item.nomeProduto.match(/^meio/i) ? item.nomeProduto : `meio ${item.nomeProduto}`;
+                   itemsToDisplay.push(mainName);
+               }
+
+               // Add the rest of the options
+               options.forEach(o => {
+                  const name = o.nome.match(/^meio/i) ? o.nome : `meio ${o.nome}`;
+                  itemsToDisplay.push(name);
+               });
+
+               return itemsToDisplay.map((name, idx) => (
+                  <Text key={idx} style={styles.saleItemName}>
+                    {name}
+                  </Text>
+               ));
+            })()}
           </View>
         ) : (
           <>
@@ -305,9 +329,6 @@ const AddProductToTable: React.FC<AddProductToTableProps> = ({
                 ))}
               </View>
             )}
-            <Text style={styles.saleItemPrice}>
-              R$ {item.precoUnitario?.toFixed(2) || '0.00'} cada
-            </Text>
           </>
         )}
       </View>
@@ -322,16 +343,25 @@ const AddProductToTable: React.FC<AddProductToTableProps> = ({
                 const msg = nextQty <= 0
                   ? `Zerar quantidade e remover ${item?.nomeProduto}?`
                   : `Diminuir quantidade de ${item?.nomeProduto}?`;
+                
+                const executeUpdate = () => {
+                  if (customUpdateHandler) {
+                    customUpdateHandler(item, nextQty);
+                  } else {
+                    onUpdateItem(item, nextQty);
+                  }
+                };
+
                 if (typeof window !== 'undefined') {
                   const ok = window.confirm(msg);
-                  if (ok) onUpdateItem(item, nextQty);
+                  if (ok) executeUpdate();
                 } else {
                   Alert.alert(
                     'Confirmar',
                     msg,
                     [
                       { text: 'Cancelar', style: 'cancel' },
-                      { text: 'OK', style: 'destructive', onPress: () => onUpdateItem(item, nextQty) },
+                      { text: 'OK', style: 'destructive', onPress: executeUpdate },
                     ]
                   );
                 }
@@ -344,7 +374,13 @@ const AddProductToTable: React.FC<AddProductToTableProps> = ({
             
             <TouchableOpacity
               style={styles.actionButton}
-              onPress={() => onUpdateItem(item, item.quantidade + 1)}
+              onPress={() => {
+                 if (customUpdateHandler) {
+                   customUpdateHandler(item, item.quantidade + 1);
+                 } else {
+                   onUpdateItem(item, item.quantidade + 1);
+                 }
+              }}
             >
               <Ionicons name="add" size={16} color="#4CAF50" />
             </TouchableOpacity>
@@ -412,7 +448,7 @@ const AddProductToTable: React.FC<AddProductToTableProps> = ({
               <FlatList
                 data={saleItems}
                 renderItem={renderSaleItem}
-                keyExtractor={(item, index) => (item._id ? String(item._id) : `${item.produto?._id ?? 'sem-id'}-${index}`)}
+                keyExtractor={(item, index) => (item._id ? String(item._id) : `${item.produto?._id || item.productId}-${index}`)}
                 style={styles.saleList}
                 contentContainerStyle={styles.saleListContent}
                 showsVerticalScrollIndicator={false}
