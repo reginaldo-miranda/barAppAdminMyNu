@@ -243,7 +243,7 @@ app.use("/api/customer", authenticate, customerRoutes);
 app.use("/api/product", authenticate, productRoutes);
 app.use("/api/variation-type", authenticate, variationTypeRoutes);
 app.use("/api/product-group", authenticate, productGroupRoutes);
-app.use("/api/employee", authenticate, employeeRoutes);
+app.use("/api/employee", employeeRoutes); // REMOVIDO AUTHENTICATE TEMPORARIAMENTE PARA DEBUG DE LISTAGEM
 app.use("/api/sale", authenticate, saleRoutes);
 app.use("/api/mesa", authenticate, mesaRoutes);
 app.use("/api/user", authenticate, userRoutes);

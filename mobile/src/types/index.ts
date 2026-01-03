@@ -26,6 +26,7 @@ export interface Sale {
   itens: CartItem[];
   observacoes?: string;
   total: number;
+  caixaVendas?: any[];
 }
 
 export interface Product {

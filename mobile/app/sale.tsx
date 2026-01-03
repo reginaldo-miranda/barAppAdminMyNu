@@ -23,7 +23,9 @@ import AddProductToTable from '../src/components/AddProductToTable';
 import ScreenIdentifier from '../src/components/ScreenIdentifier';
 import { Sale, CartItem, PaymentMethod, Product } from '../src/types/index';
 import SaleItemsModal from '../src/components/SaleItemsModal';
+
 import VariationSelectorModal from '../src/components/VariationSelectorModal';
+import PaymentSplitModal from '../src/components/PaymentSplitModal';
 
 export default function SaleScreen() {
   const { tipo, mesaId, vendaId, viewMode } = useLocalSearchParams();
@@ -44,7 +46,9 @@ export default function SaleScreen() {
   const [initialItemsModalShown, setInitialItemsModalShown] = useState(false);
   const latestReqRef = useRef<Map<string, number>>(new Map());
   const [variationVisible, setVariationVisible] = useState(false);
+
   const [variationProduct, setVariationProduct] = useState<Product | null>(null);
+  const [splitModalVisible, setSplitModalVisible] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -705,7 +709,7 @@ export default function SaleScreen() {
     }
   };
 
-  const finalizeSale = async () => {
+  const finalizeSale = async (options?: { silent?: boolean }) => {
     console.log('🔄 FINALIZAR VENDA - Iniciando processo');
     console.log('📊 Estado atual:', {
       sale: sale?._id,
@@ -749,16 +753,19 @@ export default function SaleScreen() {
       setNomeResponsavel('');
       setMesa(null);
       setComanda(null);
-      
-      Alert.alert('Sucesso', 'Venda finalizada com sucesso!', [
-        { text: 'OK', onPress: () => {
-          console.log('🔄 Voltando para tela anterior...');
-          router.back();
-        }}
-      ]);
-      
-      // Fechar o modal
       setModalVisible(false);
+
+      if (options?.silent) {
+        console.log('🔄 Finalização silenciosa: voltando imediatamente...');
+        router.back();
+      } else {
+        Alert.alert('Sucesso', 'Venda finalizada com sucesso!', [
+          { text: 'OK', onPress: () => {
+            console.log('🔄 Voltando para tela anterior...');
+            router.back();
+          }}
+        ]);
+      }
       
     } catch (error: any) {
       console.error('❌ ERRO DETALHADO ao finalizar venda:', {
@@ -788,7 +795,10 @@ export default function SaleScreen() {
     return numero.toString().padStart(2, '0');
   };
 
-  const total = cart.reduce((sum, item) => sum + item.subtotal, 0);
+  const totalItems = cart.reduce((sum, item) => sum + item.subtotal, 0);
+  const totalPaid = (sale as any)?.caixaVendas?.reduce((sum: number, cv: any) => sum + Number(cv.valor), 0) || 0;
+  const totalRemaining = Math.max(0, totalItems - totalPaid);
+  const isFullyPaid = totalItems > 0 && totalRemaining <= 0.01;
 
   if (loading) {
     return (
@@ -849,7 +859,7 @@ export default function SaleScreen() {
         <SaleItemsModal
           visible={itemsModalVisible}
           items={cart}
-          total={total}
+          total={totalItems}
           onClose={() => setItemsModalVisible(false)}
           onAddItems={() => setItemsModalVisible(false)}
           onIncrementItem={(item) => updateCartItem(item, item.quantidade + 1)}
@@ -890,13 +900,13 @@ export default function SaleScreen() {
           onPress={() => {
             console.log('🔥 BOTÃO FINALIZAR CLICADO!');
             console.log('📊 Estado do carrinho:', cart.length);
-            console.log('💰 Total:', total);
+            console.log('💰 Total:', totalRemaining);
             setModalVisible(true);
           }}
           disabled={cart.length === 0}
         >
           <Text style={styles.finalizeButtonText}>
-            Finalizar Venda - R$ {total.toFixed(2)}
+            Finalizar Venda - R$ {totalRemaining.toFixed(2)}
           </Text>
         </TouchableOpacity>
       )}
@@ -907,12 +917,30 @@ export default function SaleScreen() {
         animationType="fade"
         onRequestClose={() => setModalVisible(false)}
       >
+
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Finalizar Venda</Text>
-            <Text style={styles.modalSubtitle}>R$ {total.toFixed(2)}</Text>
+            <Text style={styles.modalSubtitle}>Total: R$ {totalItems.toFixed(2)}</Text>
+            {totalPaid > 0 && (
+              <>
+                <Text style={[styles.modalSubtitle, { color: '#4CAF50', marginTop: -20 }]}>Pago: R$ {totalPaid.toFixed(2)}</Text>
+                <Text style={[styles.modalSubtitle, { color: '#F44336', marginTop: -20 }]}>Falta: R$ {totalRemaining.toFixed(2)}</Text>
+              </>
+            )}
             
-            <Text style={styles.modalLabel}>Método de Pagamento:</Text>
+            <TouchableOpacity 
+              style={[styles.modalButton, { backgroundColor: '#FF9800', marginBottom: 20, width: '100%', flexDirection: 'row', justifyContent: 'center', gap: 8 }]}
+              onPress={() => {
+                setModalVisible(false);
+                setSplitModalVisible(true);
+              }}
+            >
+              <Ionicons name="people" size={20} color="#fff" />
+              <Text style={styles.confirmButtonText}>Dividir / Parcial</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.modalLabel}>Método de Pagamento (Restante):</Text>
             {paymentMethods.map(method => (
               <TouchableOpacity
                 key={method.key}
@@ -944,12 +972,23 @@ export default function SaleScreen() {
                 <Text style={styles.cancelButtonText}>Cancelar</Text>
               </TouchableOpacity>
               
+              {totalRemaining > 0.05 && (
+                <Text style={{ textAlign: 'center', color: '#F44336', marginBottom: 10, width: '100%' }}>
+                  Para finalizar, o saldo deve ser zero. Realize o pagamento pelo botão "Dividir / Parcial".
+                </Text>
+              )}
+              
               <TouchableOpacity
-                style={[styles.modalButton, styles.confirmButton]}
+                style={[
+                  styles.modalButton, 
+                  styles.confirmButton,
+                  totalRemaining > 0.05 && { backgroundColor: '#ccc' }
+                ]}
+                disabled={totalRemaining > 0.05}
                 onPress={() => {
                   console.log('🔥 BOTÃO CONFIRMAR CLICADO!');
                   console.log('💳 Método de pagamento selecionado:', paymentMethod);
-                  console.log('💰 Total da venda:', total);
+                  console.log('💰 Total da venda:', totalRemaining);
                   finalizeSale();
                 }}
               >
@@ -959,6 +998,33 @@ export default function SaleScreen() {
           </View>
         </View>
       </Modal>
+
+
+      <PaymentSplitModal
+        visible={splitModalVisible}
+        sale={sale}
+        onClose={() => setSplitModalVisible(false)}
+        onPaymentSuccess={(isFullPayment) => {
+           // Recarregar venda sempre para garantir consistência visual imediata
+           if (vendaId) {
+             if (tipo === 'comanda') loadComandaSale(); else loadSale();
+           } else if (mesaId) {
+             loadMesaSale();
+           }
+
+           // Se quitou tudo, finaliza a venda (fecha status e volta)
+           if (isFullPayment) {
+             // Força o fechamento do modal antes de prosseguir
+             setSplitModalVisible(false);
+             
+             // Chama finalização, mas garantimos a navegação aqui também caso a função falhe silenciosamente
+             finalizeSale({ silent: true }).then(() => {
+                // Failsafe de navegação: se ainda estiver montado, voltar.
+                router.back();
+             });
+           }
+        }}
+      />
     </SafeAreaView>
   );
 }

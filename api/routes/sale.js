@@ -208,6 +208,13 @@ const mapSaleResponse = (venda) => {
   if (venda.cliente) {
     base.cliente = { _id: String(venda.cliente.id), id: venda.cliente.id, nome: venda.cliente.nome };
   }
+  if (venda.caixaVendas) {
+    base.caixaVendas = venda.caixaVendas.map(cv => ({
+      ...cv,
+      valor: Number(cv.valor)
+    }));
+    base.totalPago = base.caixaVendas.reduce((acc, cv) => acc + cv.valor, 0);
+  }
   return base;
 };
 const mapSales = (arr) => (Array.isArray(arr) ? arr.map(mapSaleResponse) : arr);
@@ -386,6 +393,7 @@ router.get('/:id', async (req, res) => {
         cliente: { select: { nome: true } },
         mesa: { select: { numero: true, nome: true } },
         itens: { include: { product: { select: { nome: true, precoVenda: true } } } },
+        caixaVendas: true,
       },
     });
 
@@ -845,6 +853,7 @@ router.put('/:id/finalize', async (req, res) => {
       where: { id },
       include: {
         itens: true,
+        caixaVendas: true,
         funcionario: { select: { nome: true } },
         cliente: { select: { nome: true } },
         mesa: { include: { funcionarioResponsavel: { select: { id: true, nome: true } } } },
@@ -961,33 +970,41 @@ router.put('/:id/finalize', async (req, res) => {
       });
     }
 
-    const valorVenda = Number(vendaFinalizada.total);
+    const totalVenda = Number(vendaFinalizada.total);
+    const totalPago = Array.isArray(venda.caixaVendas)
+      ? venda.caixaVendas.reduce((acc, cv) => acc + Number(cv.valor), 0)
+      : 0;
+    
+    // Valor restante a ser registrado no caixa agora
+    const valorPendente = Math.max(0, totalVenda - totalPago);
     const forma = formaFinal;
 
-    await prisma.caixaVenda.create({
-      data: {
-        caixaId: caixaAberto.id,
-        vendaId: vendaFinalizada.id,
-        valor: valorVenda,
-        formaPagamento: forma,
-        dataVenda: new Date(),
-      },
-    });
+    if (valorPendente > 0.01) {
+      await prisma.caixaVenda.create({
+        data: {
+          caixaId: caixaAberto.id,
+          vendaId: vendaFinalizada.id,
+          valor: valorPendente,
+          formaPagamento: forma,
+          dataVenda: new Date(),
+        },
+      });
 
-    const novoTotalVendas = Number(caixaAberto.totalVendas || 0) + valorVenda;
-    const novoDinheiro = Number(caixaAberto.totalDinheiro || 0) + (forma === 'dinheiro' ? valorVenda : 0);
-    const novoCartao = Number(caixaAberto.totalCartao || 0) + (forma === 'cartao' ? valorVenda : 0);
-    const novoPix = Number(caixaAberto.totalPix || 0) + (forma === 'pix' ? valorVenda : 0);
+      const novoTotalVendas = Number(caixaAberto.totalVendas || 0) + valorPendente;
+      const novoDinheiro = Number(caixaAberto.totalDinheiro || 0) + (forma === 'dinheiro' ? valorPendente : 0);
+      const novoCartao = Number(caixaAberto.totalCartao || 0) + (forma === 'cartao' ? valorPendente : 0);
+      const novoPix = Number(caixaAberto.totalPix || 0) + (forma === 'pix' ? valorPendente : 0);
 
-    await prisma.caixa.update({
-      where: { id: caixaAberto.id },
-      data: {
-        totalVendas: novoTotalVendas,
-        totalDinheiro: novoDinheiro,
-        totalCartao: novoCartao,
-        totalPix: novoPix,
-      },
-    });
+      await prisma.caixa.update({
+        where: { id: caixaAberto.id },
+        data: {
+          totalVendas: novoTotalVendas,
+          totalDinheiro: novoDinheiro,
+          totalCartao: novoCartao,
+          totalPix: novoPix,
+        },
+      });
+    }
 
     if (vendaFinalizada.mesaId) {
       const mesa = await prisma.mesa.findUnique({ where: { id: vendaFinalizada.mesaId } });
@@ -1101,5 +1118,106 @@ router.get('/', async (req, res) => {
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
+
+// Registrar pagamento parcial de itens (Atualiza status/observações sem finalizar)
+router.put('/:id/pay-items', async (req, res) => {
+  try {
+    const prisma = getActivePrisma();
+    const id = Number(req.params.id);
+    const { items, paymentInfo } = req.body; // items: [{ id, paidAmount, fullyPaid }], paymentInfo: { method, totalAmount }
+
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: 'ID inválido' });
+    }
+
+    const venda = await prisma.sale.findUnique({
+      where: { id },
+      include: { itens: true }
+    });
+
+    if (!venda) {
+      return res.status(404).json({ error: 'Venda não encontrada' });
+    }
+
+    // 1. Criar registro no Caixa com os detalhes dos itens
+    let caixaAberto = await prisma.caixa.findFirst({ where: { status: 'aberto' } });
+    
+    // Se não tiver caixa aberto, abrimos um automaticamente (fallback de segurança)
+    if (!caixaAberto) {
+      const admin = await prisma.employee.findFirst({ where: { ativo: true } });
+      caixaAberto = await prisma.caixa.create({
+        data: {
+          funcionarioAberturaId: admin?.id || 1, // Fallback ID
+          valorAbertura: 0,
+          observacoes: 'Abertura automática por Pagamento Parcial',
+          totalVendas: 0,
+          totalDinheiro: 0,
+          totalCartao: 0,
+          totalPix: 0
+        }
+      });
+    }
+
+    const { method, totalAmount } = paymentInfo || {};
+    const formaPagamento = String(method || 'dinheiro').toLowerCase();
+    const valorPagamento = Number(totalAmount || 0);
+
+    // Salvar metadados dos itens pagos na tabela CaixaVenda
+    await prisma.caixaVenda.create({
+      data: {
+        caixaId: caixaAberto.id,
+        vendaId: venda.id,
+        valor: valorPagamento,
+        formaPagamento: ['dinheiro', 'cartao', 'pix'].includes(formaPagamento) ? formaPagamento : 'dinheiro',
+        dataVenda: new Date(),
+        itensPagos: items || [], // Grava o JSON na tabela
+        observacoes: 'Pagamento Parcial / Dividido'
+      }
+    });
+
+    // Atualizar totais do Caixa
+    const novoTotalVendas = Number(caixaAberto.totalVendas || 0) + valorPagamento;
+    const updateData = { totalVendas: novoTotalVendas };
+    if (formaPagamento === 'dinheiro') updateData.totalDinheiro = Number(caixaAberto.totalDinheiro || 0) + valorPagamento;
+    else if (formaPagamento === 'cartao') updateData.totalCartao = Number(caixaAberto.totalCartao || 0) + valorPagamento;
+    else if (formaPagamento === 'pix') updateData.totalPix = Number(caixaAberto.totalPix || 0) + valorPagamento;
+
+    await prisma.caixa.update({ where: { id: caixaAberto.id }, data: updateData });
+
+
+    // Atualizar status dos itens se estivem totalmente pagos
+    if (Array.isArray(items)) {
+      for (const itemPay of items) {
+        if (itemPay.fullyPaid) {
+          const exists = venda.itens.find(i => i.id === Number(itemPay.id));
+          if (exists) {
+            await prisma.saleItem.update({
+              where: { id: exists.id },
+              data: { status: 'pago' }
+            });
+          }
+        }
+      }
+    }
+
+    // Retornar venda atualizada
+    const vendaAtualizada = await prisma.sale.findUnique({
+      where: { id },
+      include: {
+        itens: { include: { product: { select: { nome: true, precoVenda: true } } } },
+        caixaVendas: true,
+        funcionario: { select: { nome: true } },
+        cliente: { select: { nome: true } },
+        mesa: { select: { numero: true, nome: true } },
+      }
+    });
+
+    res.json(mapSaleResponse(vendaAtualizada));
+  } catch (error) {
+    console.error('Erro ao registrar pagamento de itens:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
 
 export default router;

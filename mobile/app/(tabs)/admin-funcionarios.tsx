@@ -61,7 +61,8 @@ export default function AdminFuncionariosScreen() {
     try {
       setLoading(true);
       const response = await employeeService.getAll();
-      setEmployees(response.data);
+      console.log('✅ Funcionarios carregados:', response.data?.length, JSON.stringify(response.data));
+      setEmployees(response.data || []);
     } catch (error: any) {
       console.error('Erro ao carregar funcionários:', error);
       Alert.alert('Erro', 'Erro ao carregar funcionários');
@@ -163,8 +164,8 @@ export default function AdminFuncionariosScreen() {
   };
 
   const filteredEmployees = employees.filter(employee =>
-    employee.nome.toLowerCase().includes(searchText.toLowerCase()) ||
-    employee.telefone?.includes(searchText)
+    (employee.nome || '').toLowerCase().includes(searchText.toLowerCase()) ||
+    (employee.telefone || '').includes(searchText)
   );
 
   const renderEmployee = ({ item }: { item: Employee }) => (
@@ -272,9 +273,22 @@ export default function AdminFuncionariosScreen() {
         <FlatList
           data={filteredEmployees}
           renderItem={renderEmployee}
-          keyExtractor={(item) => item._id}
-          contentContainerStyle={styles.listContainer}
+          keyExtractor={(item) => String(item._id || item.id || Math.random())}
+          contentContainerStyle={[styles.listContainer, filteredEmployees.length === 0 && { flex: 1, justifyContent: 'center' }]}
           showsVerticalScrollIndicator={false}
+          refreshing={loading}
+          onRefresh={loadEmployees}
+          ListEmptyComponent={
+            <View style={{ alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+              <SafeIcon name="people-outline" size={48} color="#ccc" fallbackText="👥" />
+              <Text style={{ fontSize: 16, color: '#666', marginTop: 16, textAlign: 'center' }}>
+                {searchText ? 'Nenhum funcionário encontrado na busca.' : 'Nenhum funcionário cadastrado.'}
+              </Text>
+              <TouchableOpacity onPress={loadEmployees} style={{ marginTop: 16, padding: 10 }}>
+                <Text style={{ color: '#2196F3', fontWeight: 'bold' }}>Tentar Novamente</Text>
+              </TouchableOpacity>
+            </View>
+          }
         />
       )}
 

@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { productService, comandaService, categoryService } from '../services/api';
 import VariationSelectorModal from './VariationSelectorModal';
+import PaymentSplitModal from './PaymentSplitModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../services/storage';
 import SearchAndFilter from './SearchAndFilter';
@@ -69,6 +70,7 @@ interface Comanda {
   tipoVenda: string;
   createdAt: string;
   updatedAt: string;
+  caixaVendas?: any[];
 }
 
 interface Props {
@@ -94,6 +96,7 @@ export default function ProdutosComandaModal({ visible, onClose, comanda, onUpda
   // Novos estados para os modais
   const [itensSelecionadosModalVisible, setItensSelecionadosModalVisible] = useState(false);
   const [fecharComandaModalVisible, setFecharComandaModalVisible] = useState(false);
+  const [paymentSplitModalVisible, setPaymentSplitModalVisible] = useState(false);
   const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -626,10 +629,41 @@ export default function ProdutosComandaModal({ visible, onClose, comanda, onUpda
               <Ionicons name="list-outline" size={20} color="white" />
               <Text style={styles.actionButtonText}>Itens Selecionados</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.actionButton, { backgroundColor: '#FF9800' }]}
+              onPress={() => setPaymentSplitModalVisible(true)}
+            >
+              <Ionicons name="cash-outline" size={20} color="white" />
+              <Text style={styles.actionButtonText}>Dividir Pagamento</Text>
+            </TouchableOpacity>
             
             <TouchableOpacity 
-              style={[styles.actionButton, styles.closeComandaButton]}
-              onPress={() => setFecharComandaModalVisible(true)}
+              style={[
+                styles.actionButton, 
+                styles.closeComandaButton,
+                // Lógica para desabilitar se houver saldo devedor
+                (() => {
+                   const total = comanda?.total || 0;
+                   const pagos = comanda?.caixaVendas 
+                     ? comanda.caixaVendas.reduce((acc: number, cv: any) => acc + (Number(cv.valor) || 0), 0)
+                     : 0;
+                   const restante = Math.max(0, total - pagos);
+                   return restante > 0.05; // Tolerância
+                })() && { backgroundColor: '#ccc' }
+              ]}
+              onPress={() => {
+                   const total = comanda?.total || 0;
+                   const pagos = comanda?.caixaVendas 
+                     ? comanda.caixaVendas.reduce((acc: number, cv: any) => acc + (Number(cv.valor) || 0), 0)
+                     : 0;
+                   const restante = Math.max(0, total - pagos);
+                   if (restante > 0.05) {
+                     Alert.alert('Saldo Pendente', `A comanda possui um saldo restante de R$ ${restante.toFixed(2)}. Realize o pagamento total antes de fechar.`);
+                     return;
+                   }
+                   setFecharComandaModalVisible(true);
+              }}
             >
               <Ionicons name="checkmark-circle-outline" size={20} color="white" />
               <Text style={styles.actionButtonText}>Fechar Comanda</Text>
@@ -787,6 +821,35 @@ export default function ProdutosComandaModal({ visible, onClose, comanda, onUpda
           onConfirmWhole={handleVariationConfirmWhole}
         />
       )}
+
+      {/* Modal de Divisão de Pagamento */}
+      <PaymentSplitModal 
+        visible={paymentSplitModalVisible}
+        sale={comanda as any} 
+        onClose={() => setPaymentSplitModalVisible(false)}
+        onPaymentSuccess={async (isFullPayment) => {
+          onUpdateComanda();
+          
+          if (isFullPayment) {
+            // Se o pagamento for total, fechas os modais e finaliza a comanda
+            setPaymentSplitModalVisible(false);
+            
+            try {
+              // Tenta finalizar a comanda no backend se ainda estiver aberta
+              if (comanda?._id && comanda.status !== 'fechada') {
+                 // Pequeno delay para garantir que o backend processou os pagamentos anteriores se necessário,
+                 // mas geralmente não é preciso.
+                 await comandaService.close(comanda._id);
+              }
+            } catch (error) {
+              console.error('Erro ao finalizar comanda automaticamente:', error);
+            }
+            
+            // Fecha o modal principal para voltar à lista de comandas
+            onClose();
+          }
+        }}
+      />
     </Modal>
   );
 }

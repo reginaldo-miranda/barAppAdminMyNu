@@ -3,44 +3,32 @@ dotenv.config();
 import pkg from "@prisma/client";
 const { PrismaClient } = pkg;
 
-// Helper para construir URL do banco com base no alvo (local/railway)
+// Helper para construir URL do banco - FORÇADO LOCAL APENAS
 const buildDatabaseUrl = (target) => {
+  // Ignora o parametro target e retorna sempre a URL local
+  // Prioridade: DATABASE_URL_LOCAL > DATABASE_URL (se for localhost)
   const envLocal = process.env.DATABASE_URL_LOCAL;
-  const envRailway = process.env.DATABASE_URL_RAILWAY;
   const envDefault = process.env.DATABASE_URL;
 
-  if (target === "local") {
-    return envLocal || (envDefault && envDefault.includes("localhost") ? envDefault : envLocal) || envDefault;
-  }
-  if (target === "railway") {
-    return envRailway || (envDefault && !envDefault.includes("localhost") ? envDefault : envRailway) || envDefault;
-  }
-  return envDefault || envLocal || envRailway;
+  if (envLocal) return envLocal;
+  // Se não tiver variavel local especifica, usa a padrao se parecer local, senao usa string de conexao local padrao se disponivel ou erro
+  return envDefault || "mysql://root:root@localhost:3306/bar_db"; 
 };
 
 const urlLocal = buildDatabaseUrl("local");
-const urlRailway = buildDatabaseUrl("railway");
+// const urlRailway = buildDatabaseUrl("railway"); // REMOVIDO
 const prismaLocal = new PrismaClient({ datasources: { db: { url: urlLocal } } });
-const prismaRailway = new PrismaClient({ datasources: { db: { url: urlRailway } } });
+// const prismaRailway = ... // REMOVIDO
 
-const initialTarget = ((process.env.DB_TARGET || '').toLowerCase() === 'railway' && urlRailway) ? 'railway' : 'local';
-let prisma = initialTarget === 'railway' ? prismaRailway : prismaLocal;
-process.env.DB_TARGET = initialTarget;
-process.env.DATABASE_URL = initialTarget === 'railway' ? urlRailway : urlLocal;
+// Força sempre local
+let prisma = prismaLocal;
+process.env.DB_TARGET = 'local';
+process.env.DATABASE_URL = urlLocal;
 
-// Alternar dinamicamente o alvo do banco (local/railway)
+// Função switchDbTarget desabilitada/falsa para nao quebrar chamadas existentes mas nao fazer nada
 export const switchDbTarget = async (next) => {
-  try {
-    const target = String(next || '').toLowerCase() === 'railway' && urlRailway ? 'railway' : 'local';
-    await prisma.$disconnect().catch(() => {});
-    prisma = target === 'railway' ? prismaRailway : prismaLocal;
-    process.env.DB_TARGET = target;
-    process.env.DATABASE_URL = target === 'railway' ? urlRailway : urlLocal;
-    await prisma.$connect();
-    return { ok: true, target };
-  } catch (err) {
-    return { ok: false };
-  }
+  console.log("Tentativa de trocar DB ignorada - MODO APENAS LOCAL ATIVO");
+  return { ok: true, target: 'local' };
 };
 
 export const getCurrentDbInfo = () => {

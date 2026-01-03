@@ -573,6 +573,7 @@ export const saleService = {
         : { formaPagamento: payload?.formaPagamento || 'dinheiro' };
     return api.put(`/sale/${id}/finalize`, body);
   },
+  payItems: (id, payload) => api.put(`/sale/${id}/pay-items`, payload),
   open: () => api.get('/sale/open'),
   openMin: () => api.get('/sale/open-min'),
   updates: (since) => api.get(`/sale/updates${since ? `?since=${since}` : ''}`),
