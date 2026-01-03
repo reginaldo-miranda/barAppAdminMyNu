@@ -46,7 +46,7 @@ export default function PaymentSplitModal({
     { key: 'pix', label: 'PIX', icon: 'phone-portrait' },
   ];
 
-  // Total da venda: Se sale.total vier zerado ou inconsistente, recalcula pelos itens
+  // Total da venda
   const totalSale = useMemo(() => {
     const t = Number(sale?.total || 0);
     if (t > 0) return t;
@@ -56,11 +56,57 @@ export default function PaymentSplitModal({
     return 0;
   }, [sale]);
 
-  // O "Total Pago" da venda deve considerar PRIMEIRO o registro financeiro (CaixaVendas), 
-  // pois pagamentos podem ter sido feitos sem vínculo claro com itens.
-  const totalPaidGlobal = (sale as any)?.caixaVendas 
-    ? (sale as any).caixaVendas.reduce((acc: number, cv: any) => acc + (Number(cv.valor) || 0), 0)
-    : 0;
+  // Cálculo robusto do Total Pago
+  const totalPaidGlobal = useMemo(() => {
+    if (!sale) return 0;
+
+    // 1. Total pelos registros financeiros (CaixaVenda)
+    const financialTotal = (sale as any)?.caixaVendas 
+      ? (sale as any).caixaVendas.reduce((acc: number, cv: any) => acc + (Number(cv.valor) || 0), 0)
+      : 0;
+
+    // 2. Total pelo status físico dos itens
+    // Item marcado como 'pago' conta como totalmente pago, independente de haver registro no caixa
+    let itemsPaidTotal = 0;
+    
+    // Mapeia pagamentos parciais para evitar contagem duplicada ou incorreta
+    const paidMap = new Map<string, number>();
+    if (sale.caixaVendas && Array.isArray(sale.caixaVendas)) {
+      sale.caixaVendas.forEach((cv: any) => {
+        let pagos: any[] = [];
+        if (Array.isArray(cv.itensPagos)) pagos = cv.itensPagos;
+        else if (typeof cv.itensPagos === 'string') { try { pagos = JSON.parse(cv.itensPagos); } catch{} }
+        
+        pagos.forEach((p: any) => {
+          const pid = String(p.id);
+          const val = Number(p.paidAmount) || 0;
+          paidMap.set(pid, (paidMap.get(pid) || 0) + val);
+        });
+      });
+    }
+
+    if (sale.itens) {
+      sale.itens.forEach((item: CartItem) => {
+         const itemId = String(item._id || (item as any).id);
+         const subtotal = Number(item.subtotal);
+         const isStatusPaid = (item as any).status === 'pago';
+         
+         if (isStatusPaid) {
+           // Se está pago no status, consideramos o subtotal cheio
+           itemsPaidTotal += subtotal;
+         } else {
+           // Se não está pago, conta apenas o parcial registrado
+           itemsPaidTotal += (paidMap.get(itemId) || 0);
+         }
+      });
+    }
+
+    // Retorna o maior valor para garantir que se o item está 'pago', o valor reflete isso
+    // Mesmo que o registro financeiro tenha se perdido ou não exista.
+    // Mas também respeita pagamentos genéricos se financialTotal for maior.
+    return Math.max(financialTotal, itemsPaidTotal);
+
+  }, [sale]);
 
   // Garante que não fica negativo por arredondamento
   const totalRemainingGlobal = Math.max(0, totalSale - totalPaidGlobal);
@@ -198,9 +244,19 @@ export default function PaymentSplitModal({
 
   const handleConfirm = async () => {
     if (!sale) return;
-    if (totalSelected <= 0.01) {
+    
+    // Se já está tudo pago, o botão serve para fechar/finalizar
+    const isEverythingPaid = totalRemainingGlobal <= 0.05;
+
+    if (totalSelected <= 0.01 && !isEverythingPaid) {
       Alert.alert('Atenção', 'Selecione e informe valores para os itens que deseja pagar.');
       return;
+    }
+
+    // Se tudo pago e nada selecionado, apenas confirma o sucesso para fechar
+    if (isEverythingPaid && totalSelected <= 0.01) {
+        onPaymentSuccess(true);
+        return;
     }
 
     try {
@@ -424,15 +480,19 @@ export default function PaymentSplitModal({
             <TouchableOpacity
               style={[
                 styles.confirmButton, 
-                (totalSelected <= 0 || loading) && styles.confirmButtonDisabled
+                // Se NÃO tem nada selecionado E AINDA FALTA pagar, desabilita.
+                // Se já pagou tudo (totalRemainingGlobal <= 0), habilita para finalizar.
+                ((totalSelected <= 0.01 && totalRemainingGlobal > 0.05) || loading) && styles.confirmButtonDisabled
               ]}
               onPress={handleConfirm}
-              disabled={totalSelected <= 0 || loading}
+              disabled={((totalSelected <= 0.01 && totalRemainingGlobal > 0.05) || loading)}
             >
               {loading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.confirmButtonText}>Confirmar Pagamento</Text>
+                <Text style={styles.confirmButtonText}>
+                   {totalRemainingGlobal <= 0.05 ? 'Finalizar Venda' : 'Confirmar Pagamento'}
+                </Text>
               )}
             </TouchableOpacity>
           </View>

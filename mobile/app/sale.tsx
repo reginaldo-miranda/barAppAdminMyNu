@@ -26,6 +26,7 @@ import SaleItemsModal from '../src/components/SaleItemsModal';
 
 import VariationSelectorModal from '../src/components/VariationSelectorModal';
 import PaymentSplitModal from '../src/components/PaymentSplitModal';
+import { events } from '../src/utils/eventBus';
 
 export default function SaleScreen() {
   const { tipo, mesaId, vendaId, viewMode } = useLocalSearchParams();
@@ -709,45 +710,33 @@ export default function SaleScreen() {
     }
   };
 
+  // Estado específico para loading do botão de finalizar
+  const [finalizing, setFinalizing] = useState(false);
+
   const finalizeSale = async (options?: { silent?: boolean }) => {
     console.log('🔄 FINALIZAR VENDA - Iniciando processo');
-    console.log('📊 Estado atual:', {
-      sale: sale?._id,
-      cartLength: cart.length,
-      paymentMethod,
-      tipo
-    });
-
+    
     if (!sale || cart.length === 0) {
-      console.log('❌ ERRO: Venda ou carrinho inválido');
       Alert.alert('Erro', 'Adicione pelo menos um item à venda');
       return;
     }
 
     try {
+      setFinalizing(true);
       const total = cart.reduce((sum, item) => sum + item.subtotal, 0);
       const finalizeData = {
-        formaPagamento: paymentMethod, // Corrigindo para usar 'formaPagamento' como a API espera
+        formaPagamento: paymentMethod,
         total: total
       };
       
-      console.log('📤 Dados sendo enviados para API:', finalizeData);
-      console.log('🎯 Tipo de venda:', tipo);
-      console.log('🆔 ID da venda:', sale._id);
-      
       let response;
       if (tipo === 'comanda') {
-        console.log('🌐 Chamando comandaService.finalize...');
         response = await comandaService.finalize(sale._id, finalizeData);
       } else {
-        console.log('🌐 Chamando saleService.finalize...');
         response = await saleService.finalize(sale._id, finalizeData);
       }
       
-      console.log('✅ Resposta da API recebida:', response.data);
-      
       // Limpar dados após finalização bem-sucedida
-      console.log('🧹 Limpando dados após finalização...');
       setCart([]);
       setSale(null);
       setNomeResponsavel('');
@@ -755,26 +744,34 @@ export default function SaleScreen() {
       setComanda(null);
       setModalVisible(false);
 
+      // Disparar eventos de atualização para outras telas
+      events.emit('caixa:refresh');
+      events.emit('mesas:refresh');
+      events.emit('comandas:refresh');
+
       if (options?.silent) {
         console.log('🔄 Finalização silenciosa: voltando imediatamente...');
         router.back();
       } else {
-        Alert.alert('Sucesso', 'Venda finalizada com sucesso!', [
-          { text: 'OK', onPress: () => {
-            console.log('🔄 Voltando para tela anterior...');
-            router.back();
-          }}
-        ]);
+        // Navegação NÃO BLOQUEANTE (Fire and forget visual)
+        console.log('🔄 Voltando para tela anterior imediatamente...');
+        router.back();
+
+        // Alerta não bloqueante
+        if (Platform.OS === 'web') {
+           setTimeout(() => window.alert('Venda finalizada com sucesso!'), 300);
+        } else {
+           // No mobile, router.back() desmonta a tela. 
+           // O Alert pode não aparecer se a tela morrer, mas a navegação é prioritária.
+           // Se quisermos garantir o alert no mobile, teríamos que esperar, mas o usuário pediu "mesmo comportamento" (rápido).
+           // O comportamento "roxo" da mesa exibe alert e fecha.
+           // Vamos tentar exibir o alert logo antes de sair, mas sem callback bloqueante.
+           Alert.alert('Sucesso', 'Venda finalizada com sucesso!');
+        }
       }
       
     } catch (error: any) {
-      console.error('❌ ERRO DETALHADO ao finalizar venda:', {
-        message: (error && (error as any)?.message) || '',
-        response: error?.response?.data,
-        status: error?.response?.status,
-        config: error?.config,
-        stack: error?.stack
-      });
+      console.error('❌ ERRO DETALHADO ao finalizar venda:', error);
       
       let errorMessage = 'Não foi possível finalizar a venda';
       if (error?.response?.data?.error) {
@@ -785,6 +782,8 @@ export default function SaleScreen() {
       }
       
       Alert.alert('Erro', errorMessage);
+    } finally {
+      setFinalizing(false);
     }
   };
 
@@ -982,17 +981,28 @@ export default function SaleScreen() {
                 style={[
                   styles.modalButton, 
                   styles.confirmButton,
+                  // Se faltar pagar (totalRemaining > 0.05), o botão fica cinza e desabilitado
+                  // Se já estiver pago (totalRemaining <= 0.05), o botão fica verde e habilitado para FINALIZAR
                   totalRemaining > 0.05 && { backgroundColor: '#ccc' }
                 ]}
                 disabled={totalRemaining > 0.05}
                 onPress={() => {
                   console.log('🔥 BOTÃO CONFIRMAR CLICADO!');
-                  console.log('💳 Método de pagamento selecionado:', paymentMethod);
-                  console.log('💰 Total da venda:', totalRemaining);
-                  finalizeSale();
+                  
+                  // Se já está pago, apenas finaliza
+                  if (totalRemaining <= 0.05) {
+                     console.log('✅ Tudo pago. Finalizando venda...');
+                     finalizeSale();
+                     return;
+                  }
+
+                  // Código inalcançável se o botão estiver disabled, mas por segurança:
+                  console.log('💰 Total restante:', totalRemaining);
                 }}
               >
-                <Text style={styles.confirmButtonText}>Confirmar</Text>
+                <Text style={styles.confirmButtonText}>
+                  {totalRemaining <= 0.05 ? 'Finalizar Venda' : 'Confirmar'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>

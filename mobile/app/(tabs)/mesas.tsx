@@ -179,9 +179,9 @@ export default function MesasScreen() {
     }, [loadMesas])
   );
 
-  async function loadMesas() {
+  async function loadMesas(showLoading = true) {
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       const response = await mesaService.list();
       const mesasData = Array.isArray(response?.data) ? response.data : [];
       let needsReload = false;
@@ -211,7 +211,7 @@ export default function MesasScreen() {
       console.error('Erro ao carregar mesas:', error);
       Alert.alert('Erro', 'Não foi possível carregar as mesas');
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }
 
@@ -804,15 +804,8 @@ useEffect(() => {
   // Confirmar fechamento com pagamento
   const confirmarFechamentoMesa = async () => {
     console.log('🔄 CONFIRMAR BOTÃO CLICADO - Iniciando processo de fechamento');
-    console.log('📊 Estado atual:', {
-      fecharSaleId,
-      fecharMesaSelecionada: fecharMesaSelecionada?.numero,
-      fecharPaymentMethod,
-      finalizandoMesa
-    });
-
+    
     if (!fecharMesaSelecionada) {
-      console.log('❌ ERRO: Mesa não selecionada');
       Alert.alert('Erro', 'Mesa não selecionada.');
       return;
     }
@@ -822,9 +815,12 @@ useEffect(() => {
 
       let venda: any = null;
       if (fecharSaleId) {
-        console.log('🔎 Buscando venda atual via API...', fecharSaleId);
-        const vendaResp = await saleService.getById(fecharSaleId);
-        venda = vendaResp?.data;
+        try {
+          const vendaResp = await saleService.getById(fecharSaleId);
+          venda = vendaResp?.data;
+        } catch (e) {
+          console.error('Erro ao buscar venda:', e);
+        }
       }
 
       const itens = Array.isArray(venda?.itens) ? venda.itens : [];
@@ -832,57 +828,68 @@ useEffect(() => {
       const vendaAberta = venda?.status === 'aberta';
 
       if (vendaAberta && possuiItens) {
-        const totalAtual = itens.reduce((sum: number, it: any) => sum + (it.subtotal || 0), 0);
-        setFecharTotal(totalAtual);
         const data = { formaPagamento: fecharPaymentMethod };
-        console.log('🌐 Finalizando venda via API...');
-        const response = await saleService.finalize(fecharSaleId!, data);
-        console.log('✅ Venda finalizada:', response.data);
-        // Garantir liberação da mesa no backend
+        console.log('🌐 Finalizando venda via API...', fecharPaymentMethod);
+        
+        await saleService.finalize(fecharSaleId!, data);
+        
+        // Garantir liberação da mesa no backend (failsafe)
         try {
           await mesaService.fechar(fecharMesaSelecionada._id);
-          console.log('✅ Mesa liberada via API fechar');
         } catch (error: any) {
-          console.warn('⚠️ Falha ao chamar mesaService.fechar, a venda foi finalizada mas a mesa pode já ter sido liberada pelo backend:', error?.response?.data || error?.message);
+          console.warn('⚠️ Aviso ao fechar mesa:', error?.message);
         }
-        Alert.alert('Sucesso', 'Venda finalizada e mesa liberada!');
+
+        // 1. FECHAR MODAL IMEDIATAMENTE
+        setFecharMesaModalVisible(false);
+
+        // 2. LIMPAR FILTROS PARA GARANTIR VISIBILIDADE
+        // Isso impede que a mesa "suma" se o usuário estiver filtrando por 'ocupada'
+        setSelectedStatus(null); 
+        setSearchTerm('');
+
+        // 3. ATUALIZAÇÃO OTIMISTA (Visual imediato)
+        setMesas(prev => prev.map(m => 
+            (m._id === fecharMesaSelecionada._id || (m as any).id === fecharMesaSelecionada._id) 
+            ? { ...m, status: 'livre', nomeResponsavel: undefined, funcionarioResponsavel: undefined, vendaAtual: undefined } 
+            : m
+        ));
+
+        setFecharMesaSelecionada(null);
+        setFecharSaleId(null);
+        setFecharTotal(0);
+        setFecharPaymentMethod('dinheiro');
+
+        // 4. RECARREGAR DADOS (Sincronização com delay seguro)
+        console.log('🔄 Recarregando lista de mesas silenciosamente...');
+        setTimeout(() => {
+           loadMesas(false); // Silent refresh
+           events.emit('caixa:refresh');
+           events.emit('mesas:refresh');
+        }, 500);
+
+        // 5. EXIBIR SUCESSO (Não bloqueante)
+        if (Platform.OS === 'web') {
+           setTimeout(() => window.alert('Sucesso: Venda finalizada e mesa liberada!'), 300);
+        } else {
+           Alert.alert('Sucesso', 'Venda finalizada e mesa liberada!');
+        }
+
       } else {
-        console.log('ℹ️ Sem venda aberta com itens. Não é possível finalizar.');
         Alert.alert('Erro', 'Para fechar a mesa é necessário ter itens em uma venda aberta. Use "Liberar" para apenas liberar a mesa sem registro no caixa.');
         return;
       }
-
-      setFecharMesaModalVisible(false);
-      setFecharMesaSelecionada(null);
-      setFecharSaleId(null);
-      setFecharTotal(0);
-      setFecharPaymentMethod('dinheiro');
-
-      console.log('🔄 Recarregando lista de mesas...');
-      await loadMesas();
-      console.log('✅ Lista de mesas recarregada');
-      events.emit('caixa:refresh');
-      events.emit('mesas:refresh');
     } catch (error: any) {
-      console.error('❌ ERRO ao fechar mesa:', {
-        message: error?.message,
-        response: error?.response?.data,
-        status: error?.response?.status,
-        config: error?.config,
-        stack: error?.stack
-      });
-
+      console.error('❌ ERRO ao fechar mesa:', error);
       let errorMessage = 'Falha ao fechar mesa';
       if (error?.response?.data?.error) {
         errorMessage = error.response.data.error;
       } else if (error?.message) {
         errorMessage = error.message;
       }
-
       Alert.alert('Erro', errorMessage);
     } finally {
       setFinalizandoMesa(false);
-      console.log('🏁 Finalizando processo (finally block)');
     }
   };
 
