@@ -150,6 +150,9 @@ const normalizeSale = (venda) => {
     desconto: toNum(venda.desconto),
     total: toNum(venda.total),
     itens: itensNorm,
+    caixaVendas: Array.isArray(venda.caixaVendas)
+      ? venda.caixaVendas.map(cv => ({ ...cv, valor: toNum(cv.valor) }))
+      : venda.caixaVendas,
   };
 };
 const normalizeSales = (arr) => (Array.isArray(arr) ? arr.map(normalizeSale) : arr);
@@ -308,6 +311,7 @@ router.get('/list', async (req, res) => {
         cliente: { select: { nome: true } },
         mesa: { include: { funcionarioResponsavel: { select: { nome: true } } } },
         itens: { include: { product: { select: { nome: true, precoVenda: true } } } },
+        caixaVendas: true,
       },
       orderBy: { dataVenda: 'desc' },
       take: 100,
@@ -366,6 +370,7 @@ router.get('/mesa/:mesaId', async (req, res) => {
         cliente: { select: { nome: true } },
         mesa: { select: { numero: true, nome: true } },
         itens: { include: { product: { select: { nome: true, precoVenda: true } } } },
+        caixaVendas: true,
       },
       orderBy: { dataVenda: 'desc' },
     });
@@ -1107,6 +1112,7 @@ router.get('/', async (req, res) => {
       include: {
         funcionario: { select: { nome: true } },
         cliente: { select: { nome: true } },
+        caixaVendas: true,
       },
       orderBy: { dataVenda: 'desc' },
       take: 100,

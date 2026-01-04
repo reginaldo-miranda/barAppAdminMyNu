@@ -58,7 +58,7 @@ export default function MesasScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
-  const [mesaOpenTotals, setMesaOpenTotals] = useState<Record<string, number>>({});
+  const [mesaOpenTotals, setMesaOpenTotals] = useState<Record<string, { total: number; pago: number }>>({});
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   
   // Estados para modais
@@ -73,6 +73,7 @@ export default function MesasScreen() {
   const [fecharPaymentMethod, setFecharPaymentMethod] = useState<'dinheiro' | 'cartao' | 'pix'>('dinheiro');
   const [fecharTotal, setFecharTotal] = useState<number>(0);
   const [fecharSaleId, setFecharSaleId] = useState<string | null>(null);
+  const [fecharValorPago, setFecharValorPago] = useState<number>(0);
   const [finalizandoMesa, setFinalizandoMesa] = useState(false);
   
   // Estados para formulários
@@ -235,10 +236,11 @@ export default function MesasScreen() {
           const aberta = sales.find((s: any) => String(s?.status || '').toLowerCase() === 'aberta');
           const itens = Array.isArray(aberta?.itens) ? aberta.itens : [];
           const total = itens.reduce((sum: number, it: any) => sum + Number(it?.subtotal ?? (Number(it?.quantidade) * Number(it?.precoUnitario))), 0);
+          const pago = (aberta?.caixaVendas || []).reduce((acc: number, cv: any) => acc + (Number(cv.valor) || 0), 0);
           const idNum = Number((m as any)?.id || 0);
           const k1 = idStr;
           const k2 = idNum ? String(idNum) : undefined;
-          setMesaOpenTotals((prev) => ({ ...prev, [k1]: total, ...(k2 ? { [k2]: total } : {}) }));
+          setMesaOpenTotals((prev) => ({ ...prev, [k1]: { total, pago }, ...(k2 ? { [k2]: { total, pago } } : {}) }));
         } catch {}
       });
     } catch {}
@@ -313,8 +315,9 @@ export default function MesasScreen() {
                     try {
                       const itens = Array.isArray(v?.itens) ? v.itens : [];
                       const t = itens.reduce((acc: number, it: any) => acc + Number(it?.subtotal ?? (Number(it?.quantidade) * Number(it?.precoUnitario))), 0);
-                      setMesaOpenTotals((prev) => ({ ...prev, [String(mesaId)]: t }));
-                      console.log('[WS] total atualizado', { mesaId, total: t });
+                      const p = (v?.caixaVendas || []).reduce((acc: number, cv: any) => acc + (Number(cv.valor) || 0), 0);
+                      setMesaOpenTotals((prev) => ({ ...prev, [String(mesaId)]: { total: t, pago: p } }));
+                      console.log('[WS] total atualizado', { mesaId, total: t, pago: p });
                     } catch {}
                   } else {
                     await scheduleFetch();
@@ -771,6 +774,7 @@ useEffect(() => {
       setFecharMesaSelecionada(mesa);
       setFecharPaymentMethod('dinheiro');
       setFecharTotal(0);
+      setFecharValorPago(0);
       setFecharSaleId(null);
       console.log('✅ Estados iniciais configurados!');
 
@@ -792,7 +796,9 @@ useEffect(() => {
         return;
       }
       const total = (activeSale.itens || []).reduce((sum: number, item: any) => sum + (item.subtotal || 0), 0);
+      const totalPago = (activeSale.caixaVendas || []).reduce((acc: number, cv: any) => acc + (Number(cv.valor) || 0), 0);
       setFecharTotal(total);
+      setFecharValorPago(totalPago);
       setFecharSaleId(activeSale._id);
       setFecharMesaModalVisible(true);
     } catch (error: any) {
@@ -935,11 +941,28 @@ useEffect(() => {
               (() => {
                 const id = String(item?._id ?? (item as any)?.id ?? '');
                 const vt = item?.vendaAtual?.total;
-                const mapTotal = id ? mesaOpenTotals[id] : undefined;
-                const display = vt != null && Number(vt) > 0 ? Number(vt) : (mapTotal != null ? Number(mapTotal) : 0);
-                const valor = display.toFixed(2).replace('.', ',');
-                const prefix = display > 0 ? ` - Responsável: R$ ${valor} - ` : ' - Responsável: ';
-                return `${prefix}${item.nomeResponsavel || item.funcionarioResponsavel?.nome}`;
+                const mapData = id ? mesaOpenTotals[id] : undefined;
+                const displayTotal = vt != null && Number(vt) > 0 ? Number(vt) : (mapData?.total || 0);
+                const displayPaid = mapData?.pago || 0;
+                
+                const valorTotal = displayTotal.toFixed(2).replace('.', ',');
+                
+                // Construção da string de exibição no cabeçalho
+                let text = ``;
+                if (displayTotal > 0) {
+                     text += ` - R$ ${valorTotal}`;
+                }
+                text += ` - Responsável: ${item.nomeResponsavel || item.funcionarioResponsavel?.nome}`;
+                
+                // Se houver valor pago parcial, mostrar detalhes visuais extras
+                if (displayPaid > 0 && displayTotal > 0) {
+                   // Opcional: injetar JSX aqui? Não, string pura.
+                   // Vamos retornar apenas o nome/resp aqui e tratar os valores abaixo no JSX principal
+                   // para ter flexibilidade de cor/estilo.
+                   // Revertendo para comportamento original e adicionando bloco de valores abaixo
+                   // mas como a estrutura espera string, vamos simplificar o header e adicionar bloco
+                }
+                return text;
               })()
             }
           </Text>
@@ -948,6 +971,35 @@ useEffect(() => {
             <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
           </View>
         </View>
+
+        {/* Exibição explícita de valores financeiros se houver totais */}
+        {(() => {
+             const id = String(item?._id ?? (item as any)?.id ?? '');
+             const mapData = id ? mesaOpenTotals[id] : undefined;
+             const total = mapData?.total || 0;
+             const pago = mapData?.pago || 0;
+             
+             if (total > 0 && item.status === 'ocupada') {
+                 return (
+                     <View style={{ marginTop: 4, marginBottom: 8, paddingHorizontal: 4 }}>
+                         <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#2196F3' }}>
+                           Total: R$ {total.toFixed(2).replace('.', ',')}
+                         </Text>
+                         {pago > 0 && (
+                           <>
+                             <Text style={{ fontSize: 13, color: '#4CAF50', marginTop: 2 }}>
+                               Já pago: R$ {pago.toFixed(2).replace('.', ',')}
+                             </Text>
+                             <Text style={{ fontSize: 13, color: '#F44336', fontWeight: 'bold', marginTop: 2 }}>
+                               Restante: R$ {Math.max(0, total - pago).toFixed(2).replace('.', ',')}
+                             </Text>
+                           </>
+                         )}
+                     </View>
+                 );
+             }
+             return null;
+        })()}
 
         <View style={styles.mesaInfo}>
           <View style={styles.infoRow}>
@@ -1003,7 +1055,7 @@ useEffect(() => {
                   }}
                 >
                   <SafeIcon name="close-circle" size={12} color="#fff" fallbackText="×" />
-                  <Text style={styles.actionButtonText}>🟣 FECHAR MESA</Text>
+                  <Text style={styles.actionButtonText}>🟣 Fechar mesa integral</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -1582,6 +1634,16 @@ useEffect(() => {
 
             <View style={styles.modalContent}>
               <Text style={styles.modalDescription}>💰 Total da Mesa: R$ {fecharTotal.toFixed(2)}</Text>
+              {fecharValorPago > 0 && (
+                <>
+                  <Text style={[styles.modalDescription, { color: '#4CAF50', fontSize: 16 }]}>
+                    Já pago: R$ {fecharValorPago.toFixed(2)}
+                  </Text>
+                  <Text style={[styles.modalDescription, { color: '#F44336', fontSize: 18, fontWeight: 'bold' }]}>
+                    Restante: R$ {Math.max(0, fecharTotal - fecharValorPago).toFixed(2)}
+                  </Text>
+                </>
+              )}
               <Text style={styles.modalSubDescription}>Selecione a forma de pagamento para finalizar a mesa:</Text>
               <View style={styles.mesaTypesList}>
                 {[

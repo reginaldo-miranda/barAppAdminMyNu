@@ -30,6 +30,7 @@ export default function ComandasAbertasScreen() {
   const [fecharPaymentMethod, setFecharPaymentMethod] = useState('dinheiro');
   const [fecharTotal, setFecharTotal] = useState(0);
   const [fecharSaleId, setFecharSaleId] = useState<string | null>(null);
+  const [fecharValorPago, setFecharValorPago] = useState<number>(0);
   const [finalizandoComanda, setFinalizandoComanda] = useState(false);
   
   // Estados para filtros (igual à tela de produtos)
@@ -51,6 +52,9 @@ export default function ComandasAbertasScreen() {
     const subtotal = itens.reduce((sum: number, it: any) => sum + toNum(it?.subtotal ?? (toNum(it?.quantidade) * toNum(it?.precoUnitario))), 0);
     const desconto = toNum(sale?.desconto);
     return Math.max(0, subtotal - (Number.isFinite(desconto) ? desconto : 0));
+  };
+  const calcSalePaid = (sale: any): number => {
+    return (sale?.caixaVendas || []).reduce((acc: number, cv: any) => acc + (toNum(cv.valor) || 0), 0);
   };
   const formatMoney = (v: any): string => toNum(v).toFixed(2);
 
@@ -296,6 +300,7 @@ useEffect(() => {
       setFecharComandaSelecionada(comanda);
       setFecharPaymentMethod('dinheiro');
       setFecharTotal(0);
+      setFecharValorPago(0);
       setFecharSaleId(null);
 
       // Buscar a venda ativa da comanda (igual às mesas)
@@ -308,7 +313,9 @@ useEffect(() => {
       }
 
       const total = (comandaData.itens || []).reduce((sum: number, item: any) => sum + (item.subtotal || 0), 0);
+      const totalPago = (comandaData.caixaVendas || []).reduce((acc: number, cv: any) => acc + (Number(cv.valor) || 0), 0);
       setFecharTotal(total);
+      setFecharValorPago(totalPago);
       setFecharSaleId(comandaData._id);
       setFecharComandaSelecionada(comandaData);
       setFecharComandaModalVisible(true);
@@ -510,6 +517,23 @@ useEffect(() => {
                 </View>
                 <View style={styles.comandaTotal}>
                   <Text style={styles.comandaValor}>R$ {formatMoney(calcSaleTotal(item))}</Text>
+                    {(() => {
+                        const total = calcSaleTotal(item);
+                        const paid = calcSalePaid(item);
+                        if (total > 0 && paid > 0) {
+                            return (
+                                <>
+                                    <Text style={{ fontSize: 11, color: '#4CAF50', marginTop: 2, textAlign: 'right' }}>
+                                        Pago: {formatMoney(paid)}
+                                    </Text>
+                                    <Text style={{ fontSize: 11, color: '#F44336', fontWeight: 'bold', textAlign: 'right' }}>
+                                        Falta: {formatMoney(Math.max(0, total - paid))}
+                                    </Text>
+                                </>
+                            );
+                        }
+                        return null;
+                    })()}
                 </View>
               </TouchableOpacity>
               
@@ -526,7 +550,7 @@ useEffect(() => {
                   <View style={{ marginRight: 4 }}>
                     <SafeIcon name="close-circle" size={16} color="#fff" fallbackText="×" />
                   </View>
-                  <Text style={styles.fecharButtonText}>🔴 FECHAR COMANDA</Text>
+                  <Text style={styles.fecharButtonText}>🔴 Fechar comanda integral</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -572,6 +596,16 @@ useEffect(() => {
                 <Text style={styles.totalText}>
                   💰 Total da Comanda: R$ {formatMoney(fecharTotal)}
                 </Text>
+                {fecharValorPago > 0 && (
+                  <>
+                    <Text style={[styles.totalText, { color: '#4CAF50', fontSize: 16, marginTop: 4 }]}>
+                      Já pago: R$ {formatMoney(fecharValorPago)}
+                    </Text>
+                    <Text style={[styles.totalText, { color: '#F44336', fontSize: 18, fontWeight: 'bold', marginTop: 4 }]}>
+                      Restante: R$ {formatMoney(Math.max(0, fecharTotal - fecharValorPago))}
+                    </Text>
+                  </>
+                )}
               </View>
             )}
 
