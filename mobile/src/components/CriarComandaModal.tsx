@@ -17,6 +17,7 @@ import { employeeService } from '../services/api'
 interface Funcionario {
   _id: string;
   nome: string;
+  ativo?: boolean;
 }
 
 interface Props {
@@ -118,7 +119,15 @@ export default function CriarComandaModal({ visible, onClose, onSubmit }: Props)
                   <View style={styles.pickerContainer}>
                     <Picker
                       selectedValue={selectedFuncionario}
-                      onValueChange={(itemValue) => setSelectedFuncionario(itemValue)}
+                      onValueChange={(itemValue) => {
+                         const func = funcionarios.find(f => String(f._id) === String(itemValue));
+                         if (func && !func.ativo) {
+                           alert('Funcionário inativo não pode ser selecionado.');
+                           setSelectedFuncionario('');
+                           return;
+                         }
+                         setSelectedFuncionario(itemValue);
+                      }}
                       style={styles.picker}
                       testID="picker-funcionario"
                     >
@@ -126,8 +135,9 @@ export default function CriarComandaModal({ visible, onClose, onSubmit }: Props)
                       {funcionarios.map((funcionario) => (
                         <Picker.Item 
                           key={funcionario._id} 
-                          label={funcionario.nome} 
+                          label={`${funcionario.nome}${!funcionario.ativo ? ' (Inativo)' : ''}`}
                           value={funcionario._id} 
+                          color={!funcionario.ativo ? '#999' : '#000'}
                         />
                       ))}
                     </Picker>
@@ -206,7 +216,15 @@ export default function CriarComandaModal({ visible, onClose, onSubmit }: Props)
                 <View style={styles.pickerContainer}>
                   <Picker
                     selectedValue={selectedFuncionario}
-                    onValueChange={(itemValue) => setSelectedFuncionario(itemValue)}
+                    onValueChange={(itemValue) => {
+                       const func = funcionarios.find(f => String(f._id) === String(itemValue));
+                       if (func && !func.ativo) {
+                         alert('Funcionário inativo não pode ser selecionado.');
+                         setSelectedFuncionario('');
+                         return;
+                       }
+                       setSelectedFuncionario(itemValue);
+                    }}
                     style={styles.picker}
                     testID="picker-funcionario"
                   >
@@ -214,8 +232,9 @@ export default function CriarComandaModal({ visible, onClose, onSubmit }: Props)
                     {funcionarios.map((funcionario) => (
                       <Picker.Item 
                         key={funcionario._id} 
-                        label={funcionario.nome} 
+                        label={`${funcionario.nome}${!funcionario.ativo ? ' (Inativo)' : ''}`}
                         value={funcionario._id} 
+                        color={!funcionario.ativo ? '#999' : '#000'}
                       />
                     ))}
                   </Picker>

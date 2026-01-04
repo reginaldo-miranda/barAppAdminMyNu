@@ -31,6 +31,7 @@ import { useFocusEffect } from '@react-navigation/native';
 interface Funcionario {
   _id: string;
   nome: string;
+  ativo?: boolean;
 }
 
 interface Mesa {
@@ -1557,15 +1558,20 @@ useEffect(() => {
                             formAbrirMesa.funcionarioResponsavel === funcionario._id && styles.dropdownItemSelected
                           ]}
                           onPress={() => {
+                            if (!funcionario.ativo) {
+                              Alert.alert('Aviso', 'Funcionário inativo não pode ser selecionado.');
+                              return;
+                            }
                             setFormAbrirMesa(prev => ({ ...prev, funcionarioResponsavel: funcionario._id }));
                             setFuncionarioDropdownVisible(false);
                           }}
                         >
                           <Text style={[
                             styles.dropdownItemText,
-                            formAbrirMesa.funcionarioResponsavel === funcionario._id && styles.dropdownItemTextSelected
+                            formAbrirMesa.funcionarioResponsavel === funcionario._id && styles.dropdownItemTextSelected,
+                            !funcionario.ativo && { color: '#999' }
                           ]}>
-                            {funcionario.nome}
+                            {funcionario.nome}{!funcionario.ativo ? ' (Inativo)' : ''}
                           </Text>
                           {formAbrirMesa.funcionarioResponsavel === funcionario._id && (
                             <SafeIcon name="checkmark" size={16} color="#2196F3" fallbackText="✓" />
