@@ -901,36 +901,42 @@ const styles = StyleSheet.create({
   // Novos estilos para botões de ação
   actionButtonsContainer: {
     flexDirection: 'row',
-    paddingHorizontal: 15,
+    paddingHorizontal: 10,
     paddingVertical: 10,
     backgroundColor: '#f8f9fa',
     borderBottomWidth: 1,
     borderBottomColor: '#e9ecef',
+    gap: 8, // Use gap instead of margin
   },
   actionButton: {
     flex: 1,
-    flexDirection: 'row',
+    flexDirection: 'column', // Stack icon and text vertically to save horizontal space? Or keep row but tighter? 
+    // User said "muito estreito", so horizontal space is the issue. Vertical stacking (Icon top, Text bottom) is a great way to save horizontal space.
+    // Let's try centered column layout for buttons on mobile.
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#2196F3',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
     borderRadius: 8,
-    marginHorizontal: 5,
+    // marginHorizontal removed in favor of gap in container
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
+    minHeight: 60,
   },
   closeComandaButton: {
     backgroundColor: '#4CAF50',
   },
   actionButtonText: {
     color: 'white',
-    fontSize: 14,
+    fontSize: 11, // Smaller font
     fontWeight: '600',
-    marginLeft: 8,
+    marginTop: 4, // Margin top because we stacked vertically
+    marginLeft: 0, // Reset left margin
+    textAlign: 'center',
   },
   
   modalBody: {

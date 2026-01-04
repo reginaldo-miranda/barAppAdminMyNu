@@ -8,7 +8,10 @@ import {
   ScrollView,
   TextInput,
   Alert,
-  ActivityIndicator
+  ActivityIndicator,
+  Platform,
+  Dimensions,
+  useWindowDimensions
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Sale, CartItem, PaymentMethod } from '../types/index';
@@ -36,6 +39,9 @@ export default function PaymentSplitModal({
   onClose,
   onPaymentSuccess
 }: PaymentSplitModalProps) {
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 768; // Breakpoint simples
+
   const [loading, setLoading] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Map<string, number>>(new Map());
   const [paymentMethod, setPaymentMethod] = useState<string>('dinheiro');
@@ -323,7 +329,7 @@ export default function PaymentSplitModal({
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
-        <View style={styles.container}>
+        <View style={[styles.container, !isTablet && styles.containerMobile]}>
           <View style={styles.header}>
             <Text style={styles.title}>Divisão de Pagamento</Text>
             <TouchableOpacity onPress={onClose}>
@@ -331,9 +337,16 @@ export default function PaymentSplitModal({
             </TouchableOpacity>
           </View>
           
-          <View style={{ flex: 1, flexDirection: 'row' }}>
-            {/* ESQUERDA: Lista de Itens */}
-            <View style={{ flex: 0.65, borderRightWidth: 1, borderColor: '#eee', display: 'flex', flexDirection: 'column' }}>
+          <View style={{ flex: 1, flexDirection: isTablet ? 'row' : 'column' }}>
+            {/* Lista de Itens */}
+            <View style={{ 
+              flex: isTablet ? 0.65 : 1, 
+              borderRightWidth: isTablet ? 1 : 0, 
+              borderBottomWidth: isTablet ? 0 : 1,
+              borderColor: '#eee', 
+              display: 'flex', 
+              flexDirection: 'column' 
+            }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', paddingRight: 12, borderBottomWidth: 1, borderColor: '#f0f0f0' }}>
                     <Text style={styles.sectionTitle}>Selecione os itens a pagar:</Text>
                     <TouchableOpacity onPress={() => {
@@ -408,8 +421,13 @@ export default function PaymentSplitModal({
                 </ScrollView>
             </View>
 
-            {/* DIREITA: Resumo e Histórico */}
-            <View style={{ flex: 0.35, backgroundColor: '#f8f9fa' }}>
+            {/* Resumo e Histórico */}
+            <View style={{ 
+              flex: isTablet ? 0.35 : 0, 
+              minHeight: isTablet ? 0 : 180, // Garante altura mínima no mobile
+              maxHeight: isTablet ? '100%' : '40%', // Limita altura no mobile
+              backgroundColor: '#f8f9fa' 
+            }}>
                 <View style={styles.summaryBox}>
                     <View style={styles.rowBetween}>
                        <Text style={styles.label}>Total da Venda:</Text>
@@ -426,9 +444,9 @@ export default function PaymentSplitModal({
                     
                     {/* Histórico de Pagamentos */}
                     {(sale as any)?.caixaVendas && (sale as any).caixaVendas.length > 0 && (
-                      <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderColor: '#e0e0e0', flex: 1, minHeight: 100 }}>
-                        <Text style={{ fontSize: 13, fontWeight: 'bold', color:('#555'), marginBottom: 8 }}>Histórico de Pagamentos recentes:</Text>
-                        <ScrollView style={{ flex: 1 }} nestedScrollEnabled showsVerticalScrollIndicator={true}>
+                      <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderColor: '#e0e0e0', flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontWeight: 'bold', color:('#555'), marginBottom: 8 }}>Histórico recente:</Text>
+                        <ScrollView style={{ flex: 1, maxHeight: 100 }} nestedScrollEnabled showsVerticalScrollIndicator={true}>
                           {(sale as any).caixaVendas.map((cv: any, idx: number) => (
                             <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6, paddingVertical: 4, paddingHorizontal: 4, backgroundColor: '#fff', borderRadius: 4 }}>
                                <Text style={{ fontSize: 12, color: '#444' }}>
@@ -480,8 +498,6 @@ export default function PaymentSplitModal({
             <TouchableOpacity
               style={[
                 styles.confirmButton, 
-                // Se NÃO tem nada selecionado E AINDA FALTA pagar, desabilita.
-                // Se já pagou tudo (totalRemainingGlobal <= 0), habilita para finalizar.
                 ((totalSelected <= 0.01 && totalRemainingGlobal > 0.05) || loading) && styles.confirmButtonDisabled
               ]}
               onPress={handleConfirm}
@@ -510,8 +526,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   container: {
-    width: '95%', // Aumenta largura
-    height: '92%', // Fixa altura para ocupar mais tela
+    width: '95%',
+    height: '92%',
     backgroundColor: '#fff',
     borderRadius: 12,
     overflow: 'hidden',
@@ -520,6 +536,11 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 5,
   },
+  containerMobile: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 0,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -527,6 +548,8 @@ const styles = StyleSheet.create({
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
+    backgroundColor: '#fff',
+    zIndex: 10
   },
   title: {
     fontSize: 18,
@@ -538,7 +561,7 @@ const styles = StyleSheet.create({
     padding: 12,
     borderBottomWidth: 1,
     borderColor: '#eee',
-    // Remove maxHeight fixed limit here to allow flex growth if needed but controlled inside
+    flex: 1
   },
   rowBetween: {
     flexDirection: 'row',
@@ -567,10 +590,10 @@ const styles = StyleSheet.create({
   itemRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 8, // Reduz padding
+    padding: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
-    minHeight: 50, // Garante altura mínima clicável
+    minHeight: 50,
   },
   itemPaid: {
     backgroundColor: '#f9f9f9',

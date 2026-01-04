@@ -15,7 +15,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { Picker } from '@react-native-picker/picker';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { useProduct } from '../../src/contexts/ProductContext';
@@ -511,6 +511,7 @@ export default function CadastroProduto() {
       style={styles.container} 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
+      <Stack.Screen options={{ headerShown: false }} />
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Header Compacto */}
         <View style={styles.header}>
