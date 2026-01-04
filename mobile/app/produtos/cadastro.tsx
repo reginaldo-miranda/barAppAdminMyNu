@@ -92,7 +92,7 @@ export default function CadastroProduto() {
   const [showUnidadeModal, setShowUnidadeModal] = useState(false);
   const [selectedUnidade, setSelectedUnidade] = useState<UnidadeMedida | null>(null);
   const [setores, setSetores] = useState<SetorImpressao[]>([]);
-  const [selectedSetores, setSelectedSetores] = useState<string[]>([]);
+  const [selectedSetores, setSelectedSetores] = useState<string[] | null>(null);
   const [loadingSetores, setLoadingSetores] = useState(false);
   const [showSetoresModal, setShowSetoresModal] = useState(false);
   const [temVariacao, setTemVariacao] = useState(false);
@@ -306,12 +306,13 @@ export default function CadastroProduto() {
         setDataInclusao(produto.dataInclusao ? new Date(produto.dataInclusao) : new Date());
         setDataAlteracao(new Date());
         const rawSids = (produto as any)?.setoresImpressaoIds;
-        let sids: string[] = [];
         if (Array.isArray(rawSids)) {
-          sids = rawSids.map((n: any) => String(n));
+          const sids = rawSids.map((n: any) => String(n));
+          console.log('[DEBUG] loadProduct setores (raw):', rawSids, 'mapped:', sids);
+          setSelectedSetores(sids);
+        } else {
+          console.warn('[WARN] loadProduct: setoresImpressaoIds não é um array válido:', rawSids);
         }
-        console.log('[DEBUG] loadProduct setores (raw):', rawSids, 'mapped:', sids);
-        setSelectedSetores(sids);
       } else {
         setLoadError('Produto não encontrado.');
         Alert.alert('Erro', 'Produto não encontrado.');
@@ -377,7 +378,7 @@ export default function CadastroProduto() {
       const tipoSelecionado = tipos.find(tipo => tipo.id === tipoId);
       const unidadeSelecionada = unidades.find(unidade => unidade.id === unidadeId);
 
-      const productData = {
+      const productData: any = {
         nome: nome.trim(),
         descricao: descricao.trim(),
         preco: parseFloat(preco.replace(',', '.')),
@@ -391,9 +392,15 @@ export default function CadastroProduto() {
         temVariacao: temVariacao,
         categoriaId: categoriaSelecionada ? Number(categoriaSelecionada.id) : undefined,
         tipoId: tipoSelecionado ? Number(tipoSelecionado.id) : undefined,
-        unidadeMedidaId: unidadeSelecionada ? Number(unidadeSelecionada.id) : undefined,
-        setoresImpressaoIds: selectedSetores.map((id) => Number(id))
+        unidadeMedidaId: unidadeSelecionada ? Number(unidadeSelecionada.id) : undefined
       };
+
+      // Só envia setores se tiverem sido carregados corretamente ou modificados
+      if (selectedSetores !== null) {
+        productData.setoresImpressaoIds = selectedSetores.map((id) => Number(id));
+      } else {
+        console.warn('[WARN] Salvando produto sem atualizar setores (dados não carregados)');
+      }
 
       let response;
       if (isEditing && id) {
@@ -436,7 +443,7 @@ export default function CadastroProduto() {
                   setAtivo(true);
                   setDataAlteracao(new Date());
                   setSaveSuccess(false);
-                  setSelectedSetores([]);
+                  setSelectedSetores([]); // Resetar para vazio em novo cadastro
                   // Resetar interações
                   setHasInteracted({
                     nome: false,
@@ -444,6 +451,8 @@ export default function CadastroProduto() {
                     categoria: false,
                     descricao: false,
                     estoque: false,
+                    // @ts-ignore
+                    // setores: false
                   });
                 }
               }
@@ -672,8 +681,8 @@ export default function CadastroProduto() {
                   style={styles.unidadeSelector}
                   onPress={() => setShowSetoresModal(true)}
                 >
-                  <Text style={[styles.unidadeSelectorText, selectedSetores.length === 0 && styles.placeholderText]}>
-                    {selectedSetores.length > 0 ? setores.filter(s => selectedSetores.includes(String(s.id))).map(s => s.nome).join(', ') : 'Selecione setores'}
+                  <Text style={[styles.unidadeSelectorText, (!selectedSetores || selectedSetores.length === 0) && styles.placeholderText]}>
+                    {selectedSetores && selectedSetores.length > 0 ? setores.filter(s => selectedSetores.includes(String(s.id))).map(s => s.nome).join(', ') : 'Selecione setores'}
                   </Text>
                   <Ionicons name="chevron-down" size={20} color="#666" />
                 </TouchableOpacity>

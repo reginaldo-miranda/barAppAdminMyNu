@@ -91,10 +91,14 @@ router.post("/create", async (req, res) => {
 
     try {
       const ids = Array.isArray(setoresImpressaoIds) ? setoresImpressaoIds.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0) : [];
-      for (const sid of ids) {
-        await prisma.$executeRawUnsafe(`INSERT IGNORE INTO \`ProductSetorImpressao\` (productId, setorId) VALUES (${Number(novoProduto.id)}, ${sid})`);
+      if (ids.length > 0) {
+        console.log(`[DEBUG] Inserindo setores para produto ${novoProduto.id}:`, ids);
+        const values = ids.map(sid => `(${Number(novoProduto.id)}, ${sid})`).join(', ');
+        await prisma.$executeRawUnsafe(`INSERT IGNORE INTO \`ProductSetorImpressao\` (productId, setorId) VALUES ${values}`);
       }
-    } catch {}
+    } catch (err) {
+      console.error('[ERROR] Falha ao inserir setores na criação:', err);
+    }
     
     res.status(201).json({ message: "Produto cadastrado com sucesso", product: novoProduto });
   } catch (error) {
@@ -352,7 +356,7 @@ router.put("/update/:id", async (req, res) => {
         console.log(`[DEBUG] Setores do produto ${id} atualizados com sucesso (Count: ${ids.length}).`);
       } catch (txError) {
         console.error(`[DEBUG] FALHA CRÍTICA na transação de atualização de setores do produto ${id}:`, txError);
-        // Não relançamos o erro para não quebrar o retorno da rota principal, mas logamos severamente.
+        throw new Error(`Erro ao atualizar setores: ${txError.message}`);
       }
     }
 

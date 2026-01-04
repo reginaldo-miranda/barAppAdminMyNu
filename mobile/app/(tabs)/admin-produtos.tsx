@@ -88,7 +88,7 @@ export default function AdminProdutosScreen() {
   const [dbTarget, setDbTarget] = useState('');
   const [apiHost, setApiHost] = useState('');
   const [setores, setSetores] = useState<SetorImpressao[]>([]);
-  const [selectedSetores, setSelectedSetores] = useState<string[]>([]);
+  const [selectedSetores, setSelectedSetores] = useState<string[] | null>(null);
 
   // Filtros para o SearchAndFilter
   const categoryFilters = [
@@ -249,7 +249,7 @@ export default function AdminProdutosScreen() {
 
     setLoading(true);
     try {
-      const productData = {
+      const productData: any = {
         nome: formData.nome,
         descricao: formData.descricao,
         precoCusto: parseFloat(formData.precoCusto),
@@ -260,9 +260,14 @@ export default function AdminProdutosScreen() {
         unidade: formData.unidade,
         ativo: formData.ativo,
         quantidade: parseInt(formData.quantidade) || 0,
-        disponivel: formData.disponivel,
-        setoresImpressaoIds: selectedSetores.map((id) => Number(id))
+        disponivel: formData.disponivel
       };
+
+      if (selectedSetores !== null) {
+        productData.setoresImpressaoIds = selectedSetores.map((id) => Number(id));
+      } else {
+        console.warn('[WARN] Salvando produto (Admin) sem atualizar setores (dados não carregados)');
+      }
 
       console.log('📦 Dados do produto ANTES do envio:', JSON.stringify(productData, null, 2));
       console.log('🏷️ Categoria FINAL antes do envio:', productData.categoria);
@@ -304,12 +309,15 @@ export default function AdminProdutosScreen() {
       disponivel: product.disponivel,
     });
     setEditingProduct(product);
-    setSelectedSetores([]);
+    setSelectedSetores(null); // Initialize as null to state "loading/unknown"
     try {
       const resp = await productService.getById(product._id);
       const sids = Array.isArray(resp?.data?.setoresImpressaoIds) ? resp.data.setoresImpressaoIds.map((n: any) => String(n)) : [];
       setSelectedSetores(sids);
-    } catch {}
+    } catch {
+      console.warn('[WARN] Falha ao carregar detalhes do produto (setores) para edição em Admin');
+      // Mantém null, indicando falha
+    }
     setModalVisible(true);
   };
 
