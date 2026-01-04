@@ -143,8 +143,10 @@ export default function TabletMode() {
     ]);
   };
 
+  const isMobile = width < 768;
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isMobile && { paddingTop: 80 }]}>
       <View style={styles.navbar}>
         <TouchableOpacity onPress={onBack} style={styles.backButton} activeOpacity={0.8}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
