@@ -16,6 +16,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Sale, CartItem, PaymentMethod } from '../types/index';
 import { caixaService, saleService } from '../services/api';
+import { events } from '../utils/eventBus';
 
 interface PaymentSplitModalProps {
   visible: boolean;
@@ -40,11 +41,58 @@ export default function PaymentSplitModal({
   onPaymentSuccess
 }: PaymentSplitModalProps) {
   const { width } = useWindowDimensions();
-  const isTablet = width >= 768; // Breakpoint simples
+  const isTablet = width >= 768 || Platform.OS === 'web';
 
   const [loading, setLoading] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Map<string, number>>(new Map());
   const [paymentMethod, setPaymentMethod] = useState<string>('dinheiro');
+
+  // Efeito para fechar o modal se a venda for finalizada remotamente
+  useEffect(() => {
+    if (visible && sale && (sale as any).status === 'finalizada') {
+      Alert.alert('Aviso', 'Esta venda foi finalizada.');
+      onClose();
+    }
+  }, [sale, visible]);
+
+  // Polling de segurança para garantir atualização da venda no Desktop/Tablet
+  useEffect(() => {
+    if (!visible || !isTablet || !sale) return;
+
+    let mounted = true;
+    const interval = setInterval(async () => {
+      try {
+        const saleId = (sale as any).id || sale._id;
+        if (!saleId) return;
+        
+        // Chamada direta para obter estado mais recente
+        const response = await saleService.getById(saleId);
+        const updatedSale = response.data;
+        
+        // Comparar se houve mudança relevante (pagamentos ou status)
+        const currentPaid = (sale as any)?.caixaVendas?.length || 0;
+        const newPaid = (updatedSale as any)?.caixaVendas?.length || 0;
+        
+        const currentStatus = sale.status;
+        const newStatus = updatedSale.status;
+        
+        if (newPaid !== currentPaid || newStatus !== currentStatus) {
+           console.log('🔄 Polling: Mudança detectada na venda. Forçando refresh.');
+           // Emitir evento que o SaleScreen escuta (ou deveria escutar)
+           // Assumindo que SaleScreen tem listener para 'sale:update' via WS, podemos simular um via EventBus
+           // Mas o SaleScreen atual usa WS direto. Vamos usar o reload manual se tivermos acesso a função de reload... não temos.
+           // Melhor: emitir evento na eventBus e garantir que SaleScreen ouça a eventBus também.
+           
+           events.emit('sale:polling-update', updatedSale);
+        }
+      } catch {}
+    }, 3000);
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, [visible, isTablet, sale]);
 
   const paymentMethods: PaymentMethod[] = [
     { key: 'dinheiro', label: 'Dinheiro', icon: 'cash' },
@@ -522,7 +570,8 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: 80, // Aproximadamente 2cm do topo
     alignItems: 'center',
   },
   container: {

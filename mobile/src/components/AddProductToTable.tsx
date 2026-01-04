@@ -310,16 +310,18 @@ const AddProductToTable: React.FC<AddProductToTableProps> = ({
                   itemsToDisplay.push(name);
                });
 
-               return itemsToDisplay.map((name, idx) => (
-                  <Text key={idx} style={styles.saleItemName}>
-                    {name}
+              return itemsToDisplay.map((name, idx) => (
+                  <Text key={idx} style={[styles.saleItemName, (item as any).status === 'pago' && { color: '#4CAF50' }]}>
+                    {name} {(item as any).status === 'pago' ? '(PAGO)' : ''}
                   </Text>
-               ));
+              ));
             })()}
           </View>
         ) : (
           <>
-            <Text style={styles.saleItemName}>{item.nomeProduto}</Text>
+            <Text style={[styles.saleItemName, (item as any).status === 'pago' && { color: '#4CAF50' }]}>
+              {item.nomeProduto} {(item as any).status === 'pago' ? '(PAGO)' : ''}
+            </Text>
             {item.variacao && (
               <View style={{ marginTop: 2 }}>
                 {(Array.isArray(item.variacao.opcoes) ? item.variacao.opcoes : []).map((o, idx) => (

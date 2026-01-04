@@ -155,6 +155,28 @@ export default function SaleScreen() {
     } catch {}
   }, [sale, vendaId]);
 
+  // Listener para eventos de Polling dispostos pelos modais
+  useEffect(() => {
+    const unsub = events.on('sale:polling-update', (updatedSale: Sale) => {
+      const currentId = (sale as any)?.id || (sale as any)?._id;
+      const updatedId = (updatedSale as any)?.id || (updatedSale as any)?._id;
+      
+      if (currentId && updatedId && String(currentId) === String(updatedId)) {
+        console.log('[SaleScreen] Recebido update via polling event');
+        setSale(updatedSale);
+        setCart(updatedSale.itens || []);
+        
+        // Se foi finalizada remotamente, fecha split modal e avisa
+        if (updatedSale.status === 'finalizada' && splitModalVisible) {
+          setSplitModalVisible(false);
+          Alert.alert('Aviso', 'Venda finalizada remotamente.');
+          router.back();
+        }
+      }
+    });
+    return () => unsub();
+  }, [sale, splitModalVisible]);
+
   const paymentMethods: PaymentMethod[] = [
     { key: 'dinheiro', label: 'Dinheiro', icon: 'cash' },
     { key: 'cartao', label: 'Cartão', icon: 'card' },

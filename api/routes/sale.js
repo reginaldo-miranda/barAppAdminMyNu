@@ -1174,6 +1174,7 @@ router.put('/:id/pay-items', async (req, res) => {
         observacoes: 'Pagamento Parcial / Dividido'
       }
     });
+    console.log('[API] Pagamento Parcial registrado. Acionando sync para id:', venda.id);
 
     // Atualizar totais do Caixa
     const novoTotalVendas = Number(caixaAberto.totalVendas || 0) + valorPagamento;
@@ -1213,6 +1214,7 @@ router.put('/:id/pay-items', async (req, res) => {
     });
 
     res.json(mapSaleResponse(vendaAtualizada));
+    try { recordSaleUpdate(vendaAtualizada.id); } catch {}
   } catch (error) {
     console.error('Erro ao registrar pagamento de itens:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });

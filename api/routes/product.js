@@ -332,31 +332,27 @@ router.put("/update/:id", async (req, res) => {
     const updatedProduct = await prisma.product.update({ where: { id }, data: updateData });
 
     // Atualização de setores com transação para evitar perda de dados
+    // Atualização de setores com transação para evitar perda de dados e suportar limpeza
     if (Array.isArray(setoresImpressaoIds)) {
       const ids = setoresImpressaoIds.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0);
       
-      // SAFETY CHECK: A pedido do usuário para evitar "apagar dados", 
-      // só vamos atualizar os setores se houver IDs válidos na lista.
-      // Se a lista vier vazia (ids.length === 0), assumimos que pode ser um erro de carregamento do frontend
-      // e IGNORAMOS a atualização para proteger os dados existentes.
-      if (ids.length > 0) {
-        console.log(`[DEBUG] Atualizando setores do produto ${id} com transação. IDs:`, ids);
-        try {
-          await prisma.$transaction(async (tx) => {
-            // 1. Remover associações antigas
-            await tx.$executeRawUnsafe(`DELETE FROM \`ProductSetorImpressao\` WHERE productId = ${id}`);
-            
-            // 2. Inserir novas associações
-            for (const sid of ids) {
-              await tx.$executeRawUnsafe(`INSERT INTO \`ProductSetorImpressao\` (productId, setorId) VALUES (${id}, ${sid})`);
-            }
-          });
-          console.log(`[DEBUG] Setores do produto ${id} atualizados com sucesso.`);
-        } catch (txError) {
-          console.error(`[DEBUG] Falha na transação de atualização de setores do produto ${id}:`, txError);
-        }
-      } else {
-         console.warn(`[DEBUG] Lista de setores vazia recebida para produto ${id}. Ignorando atualização para evitar perda de dados (Safety Check).`);
+      console.log(`[DEBUG] Atualizando setores do produto ${id}. IDs recebidos:`, ids);
+
+      try {
+        await prisma.$transaction(async (tx) => {
+          // 1. Remover TODAS as associações antigas (limpeza para sobrescrever)
+          await tx.$executeRawUnsafe(`DELETE FROM \`ProductSetorImpressao\` WHERE productId = ${id}`);
+          
+          // 2. Inserir novas associações (se houver) usando Bulk Insert para performance e atomicidade
+          if (ids.length > 0) {
+            const values = ids.map(sid => `(${id}, ${sid})`).join(', ');
+            await tx.$executeRawUnsafe(`INSERT INTO \`ProductSetorImpressao\` (productId, setorId) VALUES ${values}`);
+          }
+        });
+        console.log(`[DEBUG] Setores do produto ${id} atualizados com sucesso (Count: ${ids.length}).`);
+      } catch (txError) {
+        console.error(`[DEBUG] FALHA CRÍTICA na transação de atualização de setores do produto ${id}:`, txError);
+        // Não relançamos o erro para não quebrar o retorno da rota principal, mas logamos severamente.
       }
     }
 
