@@ -318,6 +318,8 @@ export default function AdminConfiguracoesScreen() {
             </TouchableOpacity>
           </View>
         </View>
+
+
       </ScrollView>
 
       {/* Modal de Edição de Permissões */}

@@ -12,6 +12,7 @@ import { useAuth } from '../../src/contexts/AuthContext';
 import { Comanda } from '../../src/types/index';
 import ScreenIdentifier from '../../src/components/ScreenIdentifier';
 import { events } from '../../src/utils/eventBus';
+import PasswordConfirmModal from '../../src/components/PasswordConfirmModal';
 import { SafeIcon } from '../../components/SafeIcon';
 
 export default function ComandasAbertasScreen() {
@@ -32,6 +33,10 @@ export default function ComandasAbertasScreen() {
   const [fecharSaleId, setFecharSaleId] = useState<string | null>(null);
   const [fecharValorPago, setFecharValorPago] = useState<number>(0);
   const [finalizandoComanda, setFinalizandoComanda] = useState(false);
+
+  // Estado para cancelar comanda
+  const [cancelComandaModalVisible, setCancelComandaModalVisible] = useState(false);
+  const [cancelComandaTarget, setCancelComandaTarget] = useState<Comanda | null>(null);
   
   // Estados para filtros (igual à tela de produtos)
   const [searchText, setSearchText] = useState('');
@@ -325,6 +330,31 @@ useEffect(() => {
     }
   };
 
+  // Funções para cancelamento com senha
+  const iniciarCancelamentoComanda = (comanda: Comanda) => {
+    setCancelComandaTarget(comanda);
+    setCancelComandaModalVisible(true);
+  };
+
+  const handleConfirmCancelComanda = async () => {
+    if (!cancelComandaTarget) return;
+
+    try {
+      setCancelComandaModalVisible(false);
+      // Aqui usamos _id ou id dependendo do que vier
+      const id = cancelComandaTarget._id || (cancelComandaTarget as any).id;
+      await comandaService.cancel(id);
+      Alert.alert('Sucesso', 'Comanda cancelada com sucesso!');
+      await loadComandas();
+      events.emit('caixa:refresh');
+    } catch (error: any) {
+      console.error('Erro ao cancelar comanda:', error);
+      Alert.alert('Erro', error.response?.data?.error || 'Erro ao cancelar comanda.');
+    } finally {
+      setCancelComandaTarget(null);
+    }
+  };
+
   // Função para confirmar fechamento de comanda com validações
   const confirmarFechamentoComanda = async () => {
     if (!fecharPaymentMethod) {
@@ -539,19 +569,31 @@ useEffect(() => {
               
               {/* Botão de fechar comanda - só aparece se a comanda estiver aberta */}
               {item.status === 'aberta' && (
-                <TouchableOpacity 
-                  style={[styles.fecharButton, (item.itens?.length || 0) === 0 && { opacity: 0.6 }]}
-                  onPress={() => {
-                    console.log('🔴 BOTÃO FECHAR COMANDA CLICADO!', item);
-                    fecharModalFecharComanda(item);
-                  }}
-                  disabled={(item.itens?.length || 0) === 0}
-                >
-                  <View style={{ marginRight: 4 }}>
-                    <SafeIcon name="close-circle" size={16} color="#fff" fallbackText="×" />
-                  </View>
-                  <Text style={styles.fecharButtonText}>🔴 Fechar comanda integral</Text>
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', paddingHorizontal: 8, paddingBottom: 8 }}>
+                  <TouchableOpacity 
+                    style={[styles.fecharButton, { backgroundColor: '#9C27B0', flex: 1, margin: 4 }, (item.itens?.length || 0) === 0 && { opacity: 0.6 }]}
+                    onPress={() => {
+                      console.log('🔴 BOTÃO FECHAR COMANDA CLICADO!', item);
+                      fecharModalFecharComanda(item);
+                    }}
+                    disabled={(item.itens?.length || 0) === 0}
+                  >
+                    <View style={{ marginRight: 4 }}>
+                      <SafeIcon name="close-circle" size={16} color="#fff" fallbackText="×" />
+                    </View>
+                    <Text style={styles.fecharButtonText}>Fechar</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={[styles.fecharButton, { backgroundColor: '#F44336', flex: 1, margin: 4 }]}
+                    onPress={() => iniciarCancelamentoComanda(item)}
+                  >
+                    <View style={{ marginRight: 4 }}>
+                      <SafeIcon name="trash" size={16} color="#fff" fallbackText="🗑" />
+                    </View>
+                    <Text style={styles.fecharButtonText}>Cancelar</Text>
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
           );
@@ -688,6 +730,17 @@ useEffect(() => {
           </View>
         </View>
       </Modal>
+
+      <PasswordConfirmModal
+        visible={cancelComandaModalVisible}
+        title="Cancelar Comanda"
+        message={`Tem certeza que deseja cancelar a comanda ${cancelComandaTarget?.nomeComanda || cancelComandaTarget?.numeroComanda}? Esta ação não pode ser desfeita.`}
+        onConfirm={handleConfirmCancelComanda}
+        onCancel={() => {
+          setCancelComandaModalVisible(false);
+          setCancelComandaTarget(null);
+        }}
+      />
     </View>
   );
 }

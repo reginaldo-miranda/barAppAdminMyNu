@@ -851,16 +851,19 @@ export default function AdminProdutosScreen() {
                             key={s.id}
                             style={[
                               styles.selectButton,
-                              selectedSetores.includes(String(s.id)) && styles.selectButtonActive
+                              (selectedSetores || []).includes(String(s.id)) && styles.selectButtonActive
                             ]}
                             onPress={() => {
                               const id = String(s.id);
-                              setSelectedSetores((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+                              setSelectedSetores((prev) => {
+                                const current = prev || [];
+                                return current.includes(id) ? current.filter((x) => x !== id) : [...current, id];
+                              });
                             }}
                           >
                             <Text style={[
                               styles.selectButtonText,
-                              selectedSetores.includes(String(s.id)) && styles.selectButtonTextActive
+                              (selectedSetores || []).includes(String(s.id)) && styles.selectButtonTextActive
                             ]}>
                               {s.nome}
                             </Text>

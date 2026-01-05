@@ -26,6 +26,7 @@ import { STORAGE_KEYS } from '../../src/services/storage';
   import ScreenIdentifier from '../../src/components/ScreenIdentifier';
   import { API_URL } from '../../src/services/api';
   import { events } from '../../src/utils/eventBus';
+  import PasswordConfirmModal from '../../src/components/PasswordConfirmModal';
 import { useFocusEffect } from '@react-navigation/native';
 
 interface Funcionario {
@@ -76,6 +77,10 @@ export default function MesasScreen() {
   const [fecharSaleId, setFecharSaleId] = useState<string | null>(null);
   const [fecharValorPago, setFecharValorPago] = useState<number>(0);
   const [finalizandoMesa, setFinalizandoMesa] = useState(false);
+
+  // Estado para cancelar mesa
+  const [cancelMesaModalVisible, setCancelMesaModalVisible] = useState(false);
+  const [cancelMesaTarget, setCancelMesaTarget] = useState<Mesa | null>(null);
   
   // Estados para formulários
   const [quantidades, setQuantidades] = useState({
@@ -678,6 +683,57 @@ useEffect(() => {
     );
   };
 
+
+
+  // Funções para cancelamento com senha
+  const iniciarCancelamentoMesa = (mesa: Mesa) => {
+    setCancelMesaTarget(mesa);
+    setCancelMesaModalVisible(true);
+  };
+
+  const handleConfirmCancelMesa = async () => {
+    if (!cancelMesaTarget) return;
+
+    // Recupera a vendaAtualId ou busca a venda da mesa
+    // Se a mesa tem vendaAtual, usamos ela. Se não, tentamos buscar via saleService.getByMesa
+    let saleId = cancelMesaTarget.vendaAtual?.id || cancelMesaTarget.vendaAtual?._id;
+
+    // Se o ID não estiver direto no objeto mesa, tentamos buscar a venda ativa da mesa
+    if (!saleId) {
+      try {
+        const resp = await saleService.getByMesa(cancelMesaTarget._id);
+        const sales = resp.data || [];
+        const active = sales.find((s: any) => s.status === 'aberta');
+        if (active) saleId = active._id;
+      } catch (e) {
+        console.error('Erro ao buscar venda para cancelamento', e);
+      }
+    }
+
+    if (!saleId) {
+       Alert.alert('Aviso', 'Não foi encontrada venda ativa para cancelar nesta mesa. Apenas liberando a mesa.');
+       // Se não tem venda, apenas libera a mesa? Ou não faz nada?
+       // Como o usuário quer cancelar, vamos forçar liberarMesa se for só status visual
+       liberarMesa(cancelMesaTarget);
+       setCancelMesaModalVisible(false);
+       setCancelMesaTarget(null);
+       return;
+    }
+
+    try {
+      setCancelMesaModalVisible(false);
+      await saleService.cancel(saleId);
+      Alert.alert('Sucesso', 'Mesa/Venda cancelada com sucesso!');
+      await loadMesas();
+      events.emit('caixa:refresh');
+    } catch (error: any) {
+      console.error('Erro ao cancelar mesa:', error);
+      Alert.alert('Erro', error.response?.data?.error || 'Erro ao cancelar mesa.');
+    } finally {
+      setCancelMesaTarget(null);
+    }
+  };
+
   // Função para liberar mesa
   const liberarMesa = async (mesa: Mesa) => {
     console.log('🔓🔓🔓 FUNÇÃO LIBERAR MESA CHAMADA! 🔓🔓🔓');
@@ -1056,7 +1112,15 @@ useEffect(() => {
                   }}
                 >
                   <SafeIcon name="close-circle" size={12} color="#fff" fallbackText="×" />
-                  <Text style={styles.actionButtonText}>🟣 Fechar mesa integral</Text>
+                  <Text style={styles.actionButtonText}>Fechar</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: '#F44336' }]}
+                  onPress={() => iniciarCancelamentoMesa(item)}
+                >
+                  <SafeIcon name="trash" size={12} color="#fff" fallbackText="🗑" />
+                  <Text style={styles.actionButtonText}>Cancelar</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -1707,6 +1771,17 @@ useEffect(() => {
           </View>
         </View>
       </Modal>
+
+      <PasswordConfirmModal
+        visible={cancelMesaModalVisible}
+        title="Cancelar Mesa/Venda"
+        message={`Tem certeza que deseja cancelar a mesa ${cancelMesaTarget?.numero}? Esta ação não pode ser desfeita e estornará a venda integralmente.`}
+        onConfirm={handleConfirmCancelMesa}
+        onCancel={() => {
+          setCancelMesaModalVisible(false);
+          setCancelMesaTarget(null);
+        }}
+      />
     </View>
   );
 }

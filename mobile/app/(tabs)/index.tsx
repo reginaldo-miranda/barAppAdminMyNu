@@ -7,11 +7,13 @@ import {
   ScrollView,
   Alert,
   RefreshControl,
+  BackHandler,
+  Platform,
 } from 'react-native';
 import { router } from 'expo-router';
 
 import { useAuth } from '../../src/contexts/AuthContext';
-import { saleService, mesaService } from '../../src/services/api';
+import { saleService, mesaService, systemService } from '../../src/services/api';
 import ScreenIdentifier from '../../src/components/ScreenIdentifier';
 import { events } from '../../src/utils/eventBus'
 import { SafeIcon } from '../../components/SafeIcon';
@@ -115,14 +117,50 @@ export default function HomeScreen() {
   }, [loadStats]);
 
   const handleLogout = () => {
+    const title = 'Sair do Sistema';
+    const message = 'Tem certeza que deseja fechar o sistema? Isso irá ENCERRAR O BANCO DE DADOS e desligar a aplicação.';
+    
+    // Tratamento específico para Web (Alert.alert tem limitações)
+    if (Platform.OS === 'web') {
+      // @ts-ignore - window.confirm existe no ambiente web
+      if (window.confirm(`${title}\n\n${message}`)) {
+        performShutdown();
+      }
+      return;
+    }
+
     Alert.alert(
-      'Sair',
-      'Tem certeza que deseja sair do sistema?',
+      title,
+      message,
       [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Sair', style: 'destructive', onPress: logout },
+        { 
+          text: 'Sair e Desligar', 
+          style: 'destructive', 
+          onPress: performShutdown
+        },
       ]
     );
+  };
+
+  const performShutdown = async () => {
+    try {
+      // Tenta enviar comando de shutdown ao servidor
+      await systemService.shutdown().catch((err) => console.warn('Falha no shutdown remoto', err));
+      
+      // Aguarda um momento para garantir envio e então fecha
+      setTimeout(() => {
+        if (Platform.OS === 'android') {
+          BackHandler.exitApp();
+        } else {
+          // Fallback para iOS e Web: apenas desloga
+          logout();
+        }
+      }, 800);
+    } catch (error) {
+      console.error('Erro ao sair:', error);
+      logout();
+    }
   };
 
   const menuItems = [

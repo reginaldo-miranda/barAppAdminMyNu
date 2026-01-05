@@ -574,6 +574,7 @@ export const saleService = {
     return api.put(`/sale/${id}/finalize`, body);
   },
   payItems: (id, payload) => api.put(`/sale/${id}/pay-items`, payload),
+  cancel: (id) => api.put(`/sale/${id}/cancel`),
   open: () => api.get('/sale/open'),
   openMin: () => api.get('/sale/open-min'),
   updates: (since) => api.get(`/sale/updates${since ? `?since=${since}` : ''}`),
@@ -611,6 +612,8 @@ export const comandaService = {
   finalize: (id, payload) => saleService.finalize(id, payload),
   // Fechar comanda com pagamento padrão 'dinheiro'
   close: (id) => saleService.finalize(id, 'dinheiro'),
+  // Cancelar comanda (estorno completo)
+  cancel: (id) => saleService.cancel(id),
 };
 
 export const caixaService = {
@@ -632,6 +635,11 @@ export const userService = {
   updatePermissions: (id, permissoes) => api.put(`/user/${id}/permissions`, { permissoes }),
   updateStatus: (id, ativo) => api.put(`/user/${id}/status`, { ativo }),
   delete: (id) => api.delete(`/user/${id}`),
+};
+
+// Serviço de sistema para controle da aplicação e servidor
+export const systemService = {
+  shutdown: () => api.post('/auth/shutdown'),
 };
 
 // Função simples para configurar IP manual (para testes)

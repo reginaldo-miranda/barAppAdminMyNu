@@ -49,7 +49,9 @@ model Product {
   tipoRel             Tipo?            @relation(fields: [tipoId], references: [id])
   unidadeRel          UnidadeMedida?   @relation(fields: [unidadeMedidaId], references: [id])
   saleItems           SaleItem[]
-  setoresImpressao    SetorImpressao[] @relation("ProductToSetorImpressao")
+  saleItems           SaleItem[]
+  setoresImpressao    ProductSetorImpressao[]
+
 
   @@index([categoriaId], map: "Product_categoriaId_fkey")
   @@index([groupId], map: "Product_groupId_fkey")
@@ -156,7 +158,8 @@ model SetorImpressao {
   dataInclusao    DateTime  @default(now())
   printerId       Int?
   printer         Printer?  @relation(fields: [printerId], references: [id])
-  produtos        Product[] @relation("ProductToSetorImpressao")
+  produtos        ProductSetorImpressao[]
+
 
   @@index([printerId], map: "SetorImpressao_printerId_fkey")
 }
@@ -194,6 +197,15 @@ model WhatsAppMessageLog {
   error     String?
   createdAt DateTime    @default(now())
   sentAt    DateTime?
+}
+
+model ProductSetorImpressao {
+  productId Int
+  product   Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  setorId   Int
+  setor     SetorImpressao @relation(fields: [setorId], references: [id], onDelete: Cascade)
+
+  @@id([productId, setorId])
 }
 
 model Categoria {

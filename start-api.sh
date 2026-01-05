@@ -83,7 +83,7 @@ fi
 
 # Pular migrações para não tocar nos dados existentes
 echo "🛠️ Aplicando schema do Prisma (db push)"
-npx prisma db push --accept-data-loss >/dev/null 2>&1 || true
+npx prisma db push >/dev/null 2>&1 || true
 echo "🧩 Gerando Prisma Client"
 
 npx prisma generate >/dev/null 2>&1 || true

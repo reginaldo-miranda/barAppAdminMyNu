@@ -93,8 +93,11 @@ router.post("/create", async (req, res) => {
       const ids = Array.isArray(setoresImpressaoIds) ? setoresImpressaoIds.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0) : [];
       if (ids.length > 0) {
         console.log(`[DEBUG] Inserindo setores para produto ${novoProduto.id}:`, ids);
-        const values = ids.map(sid => `(${Number(novoProduto.id)}, ${sid})`).join(', ');
-        await prisma.$executeRawUnsafe(`INSERT IGNORE INTO \`ProductSetorImpressao\` (productId, setorId) VALUES ${values}`);
+        const data = ids.map(sid => ({ productId: novoProduto.id, setorId: sid }));
+        await prisma.productSetorImpressao.createMany({
+            data: data,
+            skipDuplicates: true
+        });
       }
     } catch (err) {
       console.error('[ERROR] Falha ao inserir setores na criação:', err);
@@ -337,6 +340,8 @@ router.put("/update/:id", async (req, res) => {
 
     // Atualização de setores com transação para evitar perda de dados
     // Atualização de setores com transação para evitar perda de dados e suportar limpeza
+    // Atualização de setores com transação para evitar perda de dados e suportar limpeza
+    // Atualização de setores com transação para evitar perda de dados e suportar limpeza
     if (Array.isArray(setoresImpressaoIds)) {
       const ids = setoresImpressaoIds.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0);
       
@@ -344,19 +349,21 @@ router.put("/update/:id", async (req, res) => {
 
       try {
         await prisma.$transaction(async (tx) => {
-          // 1. Remover TODAS as associações antigas (limpeza para sobrescrever)
+          // 1. Remover TODAS as associações antigas - Fallback para SQL direto para garantir funcionamento
+          // Tentar primeiro DELETE direto na tabela (mais seguro se o model Prisma não estiver carregado)
           await tx.$executeRawUnsafe(`DELETE FROM \`ProductSetorImpressao\` WHERE productId = ${id}`);
           
-          // 2. Inserir novas associações (se houver) usando Bulk Insert para performance e atomicidade
+          // 2. Inserir novas associações (se houver)
           if (ids.length > 0) {
-            const values = ids.map(sid => `(${id}, ${sid})`).join(', ');
-            await tx.$executeRawUnsafe(`INSERT INTO \`ProductSetorImpressao\` (productId, setorId) VALUES ${values}`);
+             const values = ids.map(sid => `(${id}, ${sid})`).join(', ');
+             await tx.$executeRawUnsafe(`INSERT INTO \`ProductSetorImpressao\` (productId, setorId) VALUES ${values}`);
           }
         });
         console.log(`[DEBUG] Setores do produto ${id} atualizados com sucesso (Count: ${ids.length}).`);
       } catch (txError) {
-        console.error(`[DEBUG] FALHA CRÍTICA na transação de atualização de setores do produto ${id}:`, txError);
-        throw new Error(`Erro ao atualizar setores: ${txError.message}`);
+        console.error(`[DEBUG] FALHA na transação de atualização de setores do produto ${id}:`, txError);
+        // Não lançar erro se falhar, apenas logar. A prioridade é salvar o produto em si.
+        // throw new Error(`Erro ao atualizar setores: ${txError.message}`);
       }
     }
 

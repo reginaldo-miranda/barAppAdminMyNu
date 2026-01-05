@@ -270,9 +270,7 @@ prisma.$connect()
     await prisma.$executeRawUnsafe(
       "CREATE TABLE IF NOT EXISTS `SetorImpressao` (\n        `id` INTEGER NOT NULL AUTO_INCREMENT,\n        `nome` VARCHAR(191) NOT NULL,\n        `descricao` VARCHAR(191) NULL,\n        `modoEnvio` ENUM('impressora','whatsapp') NOT NULL DEFAULT 'impressora',\n        `whatsappDestino` VARCHAR(191) NULL,\n        `ativo` BOOLEAN NOT NULL DEFAULT true,\n        `dataInclusao` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),\n        UNIQUE INDEX `SetorImpressao_nome_key`(`nome`),\n        PRIMARY KEY (`id`)\n      ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
     );
-    await prisma.$executeRawUnsafe(
-      "CREATE TABLE IF NOT EXISTS `ProductSetorImpressao` (\n        `productId` INTEGER NOT NULL,\n        `setorId` INTEGER NOT NULL,\n        PRIMARY KEY (`productId`, `setorId`)\n      ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-    );
+
     await prisma.$executeRawUnsafe(
       "CREATE TABLE IF NOT EXISTS `Printer` (\n        `id` INTEGER NOT NULL AUTO_INCREMENT,\n        `nome` VARCHAR(191) NOT NULL,\n        `modelo` VARCHAR(191) NULL,\n        `address` VARCHAR(191) NULL,\n        `driver` VARCHAR(191) NULL,\n        `ativo` BOOLEAN NOT NULL DEFAULT true,\n        `dataInclusao` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),\n        UNIQUE INDEX `Printer_nome_key`(`nome`),\n        PRIMARY KEY (`id`)\n      ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
     );

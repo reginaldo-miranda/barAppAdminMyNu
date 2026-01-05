@@ -133,4 +133,33 @@ router.post("/login", async (req, res) => {
   }
 });
 
+// Rota de shutdown seguro
+router.post("/shutdown", async (req, res) => {
+  try {
+    // Verificar se há token (segurança básica) - embora o middleware geral já verifique na maioria das rotas
+    // Aqui assumimos que quem chama tem acesso ao sistema
+    console.log('🛑 Shutdown solicitado. Iniciando desligamento seguro...');
+    
+    // Tentar desconectar o Prisma
+    try {
+      await prisma.$disconnect();
+      console.log('✅ Conexão com banco de dados encerrada.');
+    } catch (dbError) {
+      console.error('⚠️ Erro ao desconectar banco:', dbError);
+    }
+
+    res.json({ message: "Sistema desligando com segurança..." });
+
+    // Aguardar terminar resposta e então sair
+    setTimeout(() => {
+      console.log('👋 Adeus!');
+      process.exit(0);
+    }, 500);
+
+  } catch (error) {
+    console.error("Erro no shutdown:", error);
+    res.status(500).json({ error: "Erro ao desligar sistema" });
+  }
+});
+
 export default router;

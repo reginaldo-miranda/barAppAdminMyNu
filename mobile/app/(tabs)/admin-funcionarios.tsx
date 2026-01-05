@@ -20,6 +20,7 @@ import { SafeIcon } from '../../components/SafeIcon';
 
 interface Employee {
   _id: string;
+  id?: string | number;
   nome: string;
   endereco: string;
   bairro: string;
