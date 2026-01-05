@@ -26,7 +26,8 @@
         "android.permission.ACCESS_WIFI_STATE",
         "android.permission.CHANGE_WIFI_STATE",
         "android.permission.NEARBY_WIFI_DEVICES"
-      ]
+      ],
+      "package": "com.reginaldomiranda.mobile"
     },
     "web": {
       "output": "static",
@@ -34,7 +35,9 @@
       "bundler": "metro",
       "build": {
         "babel": {
-          "include": ["@expo/vector-icons"]
+          "include": [
+            "@expo/vector-icons"
+          ]
         }
       }
     },
@@ -57,6 +60,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "59ff3bbf-d189-43ba-8b21-276a94b06ff1"
+      }
     }
   }
 }
