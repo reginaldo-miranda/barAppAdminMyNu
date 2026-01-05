@@ -34,6 +34,11 @@ import cors from "cors";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
 import authRoutes from "./routes/auth.js";
+import companyRoutes from "./routes/company.js";
+
+// ... (existing imports)
+
+
 import customerRoutes from "./routes/customer.js";
 import productRoutes from "./routes/product.js";
 import productGroupRoutes from "./routes/productGroup.js";
@@ -240,6 +245,7 @@ const authenticate = (req, res, next) => {
 // Rotas
 app.use("/api/auth", authRoutes); // rotas públicas
 app.use("/api/customer", authenticate, customerRoutes);
+app.use("/api/company", authenticate, companyRoutes); // Nova rota de empresa
 app.use("/api/product", authenticate, productRoutes);
 app.use("/api/variation-type", authenticate, variationTypeRoutes);
 app.use("/api/product-group", authenticate, productGroupRoutes);

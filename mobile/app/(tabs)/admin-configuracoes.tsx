@@ -9,9 +9,10 @@ import {
   Modal,
   Switch,
   ActivityIndicator,
+  TextInput,
 } from 'react-native';
 import { SafeIcon } from '../../components/SafeIcon';
-import { employeeService, userService } from '../../src/services/api';
+import { employeeService, userService, companyService } from '../../src/services/api';
 import { useAuth } from '../../src/contexts/AuthContext';
 import ScreenIdentifier from '../../src/components/ScreenIdentifier';
 import { useNavigation } from '@react-navigation/native';
@@ -46,6 +47,12 @@ export default function AdminConfiguracoesScreen() {
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserPermissions | null>(null);
+  
+  // States para Cadastro de Empresa
+  const [companyModalVisible, setCompanyModalVisible] = useState(false);
+  const [companyData, setCompanyData] = useState<any>({});
+  const [loadingCompany, setLoadingCompany] = useState(false);
+
   const navigation = useNavigation();
 
   useEffect(() => {
@@ -67,6 +74,34 @@ export default function AdminConfiguracoesScreen() {
       Alert.alert('Erro', 'Erro ao carregar usuários');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadCompany = async () => {
+    try {
+      setLoadingCompany(true);
+      const response = await companyService.get();
+      setCompanyData(response.data || {});
+      setCompanyModalVisible(true);
+    } catch (error) {
+      console.error('Erro ao carregar empresa:', error);
+      Alert.alert('Erro', 'Não foi possível carregar os dados da empresa');
+    } finally {
+      setLoadingCompany(false);
+    }
+  };
+
+  const handleSaveCompany = async () => {
+    try {
+      setLoadingCompany(true);
+      await companyService.save(companyData);
+      Alert.alert('Sucesso', 'Dados da empresa salvos com sucesso!');
+      setCompanyModalVisible(false);
+    } catch (error) {
+      console.error('Erro ao salvar empresa:', error);
+      Alert.alert('Erro', 'Não foi possível salvar os dados da empresa');
+    } finally {
+      setLoadingCompany(false);
     }
   };
 
@@ -262,6 +297,21 @@ export default function AdminConfiguracoesScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Configurações Gerais</Text>
           <View style={styles.settingsCard}>
+            <TouchableOpacity 
+              style={styles.settingItem}
+              onPress={loadCompany}
+            >
+              <View style={styles.settingContent}>
+                <SafeIcon name="business" size={24} color="#2196F3" fallbackText="🏢" />
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingTitle}>Dados da Empresa</Text>
+                  <Text style={styles.settingDescription}>
+                    CNPJ, Endereço, Faturamento e NFC-e
+                  </Text>
+                </View>
+              </View>
+              <SafeIcon name="chevron-forward" size={20} color="#ccc" fallbackText="›" />
+            </TouchableOpacity>
             <TouchableOpacity style={styles.settingItem}>
               <View style={styles.settingContent}>
                 <SafeIcon name="notifications" size={24} color="#2196F3" fallbackText="🔔" />
@@ -375,6 +425,123 @@ export default function AdminConfiguracoesScreen() {
               ))}
             </ScrollView>
           )}
+        </View>
+      </Modal>
+
+      {/* Modal de Cadastro de Empresa */}
+      <Modal
+        visible={companyModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setCompanyModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+           <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setCompanyModalVisible(false)}>
+              <Text style={styles.cancelButton}>Voltar</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Dados da Empresa</Text>
+            <TouchableOpacity onPress={handleSaveCompany}>
+              <Text style={styles.saveButton}>Salvar</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalContent}>
+            <Text style={styles.sectionHeader}>1. Identificação</Text>
+            <SimpleInput label="Razão Social *" value={companyData.razaoSocial} onChangeText={(t: string) => setCompanyData({...companyData, razaoSocial: t})} />
+            <SimpleInput label="Nome Fantasia *" value={companyData.nomeFantasia} onChangeText={(t: string) => setCompanyData({...companyData, nomeFantasia: t})} />
+            <SimpleInput label="CNPJ *" value={companyData.cnpj} onChangeText={(t: string) => setCompanyData({...companyData, cnpj: t})} keyboardType="numeric" />
+            <SimpleInput label="Inscrição Estadual" value={companyData.inscricaoEstadual} onChangeText={(t: string) => setCompanyData({...companyData, inscricaoEstadual: t})} placeholder="Isento se vazio" />
+            <SimpleInput label="Inscrição Municipal" value={companyData.inscricaoMunicipal} onChangeText={(t: string) => setCompanyData({...companyData, inscricaoMunicipal: t})} />
+
+            <Text style={styles.sectionHeader}>2. Endereço Fiscal</Text>
+            <SimpleInput label="CEP" value={companyData.cep} onChangeText={(t: string) => setCompanyData({...companyData, cep: t})} keyboardType="numeric" />
+            <SimpleInput label="Logradouro" value={companyData.logradouro} onChangeText={(t: string) => setCompanyData({...companyData, logradouro: t})} />
+            <View style={{flexDirection: 'row', gap: 10}}>
+                <View style={{flex: 1}}><SimpleInput label="Número" value={companyData.numero} onChangeText={(t: string) => setCompanyData({...companyData, numero: t})} /></View>
+                <View style={{flex: 2}}><SimpleInput label="Bairro" value={companyData.bairro} onChangeText={(t: string) => setCompanyData({...companyData, bairro: t})} /></View>
+            </View>
+            <SimpleInput label="Complemento" value={companyData.complemento} onChangeText={(t: string) => setCompanyData({...companyData, complemento: t})} />
+            <View style={{flexDirection: 'row', gap: 10}}>
+                <View style={{flex: 2}}><SimpleInput label="Cidade" value={companyData.cidade} onChangeText={(t: string) => setCompanyData({...companyData, cidade: t})} /></View>
+                <View style={{flex: 1}}><SimpleInput label="UF" value={companyData.uf} onChangeText={(t: string) => setCompanyData({...companyData, uf: t})} maxLength={2} /></View>
+            </View>
+            <SimpleInput label="Cód. Município IBGE" value={companyData.ibge} onChangeText={(t: string) => setCompanyData({...companyData, ibge: t})} keyboardType="numeric" />
+
+            <Text style={styles.sectionHeader}>3. Contato</Text>
+            <SimpleInput label="Telefone Principal" value={companyData.telefone} onChangeText={(t: string) => setCompanyData({...companyData, telefone: t})} keyboardType="phone-pad" />
+            <SimpleInput label="Email Principal" value={companyData.email} onChangeText={(t: string) => setCompanyData({...companyData, email: t})} keyboardType="email-address" />
+            <SimpleInput label="WhatsApp (Opcional)" value={companyData.whatsapp} onChangeText={(t: string) => setCompanyData({...companyData, whatsapp: t})} keyboardType="phone-pad" />
+
+            <Text style={styles.sectionHeader}>4. Dados Fiscais (NFC-e)</Text>
+            <Text style={styles.inputLabel}>Regime Tributário</Text>
+             <View style={styles.radioGroup}>
+                {['simples_nacional', 'lucro_presumido', 'lucro_real'].map(opt => (
+                    <TouchableOpacity key={opt} style={[styles.radioBtn, companyData.regimeTributario === opt && styles.radioBtnSelected]} onPress={() => setCompanyData({...companyData, regimeTributario: opt})}>
+                        <Text style={[styles.radioText, companyData.regimeTributario === opt && styles.radioTextSelected]}>{opt.replace('_', ' ').toUpperCase()}</Text>
+                    </TouchableOpacity>
+                ))}
+            </View>
+            <SimpleInput label="CNAE Principal" value={companyData.cnae} onChangeText={(t: string) => setCompanyData({...companyData, cnae: t})} />
+            <View style={styles.switchRow}>
+                <Text style={styles.inputLabel}>Contribuinte ICMS?</Text>
+                <Switch value={companyData.contribuinteIcms !== false} onValueChange={(v) => setCompanyData({...companyData, contribuinteIcms: v})} />
+            </View>
+            <View style={styles.switchRow}>
+                <Text style={styles.inputLabel}>Ambiente de Produção? (NFC-e)</Text>
+                <Switch trackColor={{false: '#FF9800', true: '#4CAF50'}} value={companyData.ambienteFiscal === 'producao'} onValueChange={(v) => setCompanyData({...companyData, ambienteFiscal: v ? 'producao' : 'homologacao'})} />
+            </View>
+            <Text style={{fontSize: 12, color: '#666', marginBottom: 10, textAlign: 'right'}}>{companyData.ambienteFiscal === 'producao' ? 'PRODUÇÃO (Válido)' : 'HOMOLOGAÇÃO (Teste)'}</Text>
+
+
+            <Text style={styles.sectionHeader}>5. Emissão e Impressão</Text>
+            <SimpleInput label="Nome Fantasia na Impressão" value={companyData.nomeImpressao} onChangeText={(t: string) => setCompanyData({...companyData, nomeImpressao: t})} />
+            <SimpleInput label="Mensagem Rodapé NFC-e" value={companyData.mensagemRodape} onChangeText={(t: string) => setCompanyData({...companyData, mensagemRodape: t})} />
+            <View style={{flexDirection: 'row', gap: 10}}>
+                <View style={{flex: 1}}><SimpleInput label="Série NFC-e" value={String(companyData.serieNfce || '1')} onChangeText={(t: string) => setCompanyData({...companyData, serieNfce: t})} keyboardType="numeric" /></View>
+                <View style={{flex: 1}}><SimpleInput label="Nº Inicial" value={String(companyData.numeroInicialNfce || '1')} onChangeText={(t: string) => setCompanyData({...companyData, numeroInicialNfce: t})} keyboardType="numeric" /></View>
+            </View>
+
+            <Text style={styles.sectionHeader}>6. Responsável Legal</Text>
+            <SimpleInput label="Nome Completo" value={companyData.respNome} onChangeText={(t: string) => setCompanyData({...companyData, respNome: t})} />
+            <SimpleInput label="CPF" value={companyData.respCpf} onChangeText={(t: string) => setCompanyData({...companyData, respCpf: t})} />
+            <SimpleInput label="Cargo" value={companyData.respCargo} onChangeText={(t: string) => setCompanyData({...companyData, respCargo: t})} />
+            <SimpleInput label="Email Pessoal" value={companyData.respEmail} onChangeText={(t: string) => setCompanyData({...companyData, respEmail: t})} />
+
+            <Text style={styles.sectionHeader}>7. Cobrança e Manutenção</Text>
+            <SimpleInput label="Plano Contratado" value={companyData.plano} onChangeText={(t: string) => setCompanyData({...companyData, plano: t})} />
+            <View style={{flexDirection: 'row', gap: 10}}>
+                <View style={{flex: 1}}><SimpleInput label="Valor Mensal" value={String(companyData.valorMensalidade || '')} onChangeText={(t: string) => setCompanyData({...companyData, valorMensalidade: t})} keyboardType="numeric" /></View>
+                <View style={{flex: 1}}><SimpleInput label="Dia Vencimento" value={String(companyData.diaVencimento || '')} onChangeText={(t: string) => setCompanyData({...companyData, diaVencimento: t})} keyboardType="numeric" /></View>
+            </View>
+            <SimpleInput label="Data Início Cobrança" value={companyData.dataInicioCobranca ? new Date(companyData.dataInicioCobranca).toLocaleDateString('pt-BR') : ''} onChangeText={() => {}} placeholder="DD/MM/AAAA" editable={false} />
+            <Text style={styles.inputLabel}>Forma de Pagamento</Text>
+             <View style={styles.radioGroup}>
+                {['pix', 'boleto', 'cartao'].map(opt => (
+                    <TouchableOpacity key={opt} style={[styles.radioBtn, companyData.formaCobranca === opt && styles.radioBtnSelected]} onPress={() => setCompanyData({...companyData, formaCobranca: opt})}>
+                        <Text style={[styles.radioText, companyData.formaCobranca === opt && styles.radioTextSelected]}>{opt.toUpperCase()}</Text>
+                    </TouchableOpacity>
+                ))}
+            </View>
+            <SimpleInput label="Email para Cobrança" value={companyData.emailCobranca} onChangeText={(t: string) => setCompanyData({...companyData, emailCobranca: t})} keyboardType="email-address" />
+
+            <Text style={styles.sectionHeader}>8. Dados Bancários</Text>
+            <SimpleInput label="Banco" value={companyData.banco} onChangeText={(t: string) => setCompanyData({...companyData, banco: t})} />
+            <View style={{flexDirection: 'row', gap: 10}}>
+                <View style={{flex: 1}}><SimpleInput label="Agência" value={companyData.agencia} onChangeText={(t: string) => setCompanyData({...companyData, agencia: t})} /></View>
+                <View style={{flex: 1}}><SimpleInput label="Conta" value={companyData.conta} onChangeText={(t: string) => setCompanyData({...companyData, conta: t})} /></View>
+            </View>
+            <SimpleInput label="Chave PIX" value={companyData.chavePix} onChangeText={(t: string) => setCompanyData({...companyData, chavePix: t})} />
+
+            <Text style={styles.sectionHeader}>9. Controle (Interno)</Text>
+             <View style={styles.infoRow}>
+               <SafeIcon name="calendar" size={20} color="#666" fallbackText="📅" />
+               <Text style={{marginLeft: 10}}>Cadastro: {companyData.dataCadastro ? new Date(companyData.dataCadastro).toLocaleDateString('pt-BR') : 'Hoje'}</Text>
+             </View>
+             <SimpleInput label="Observações Internas" value={companyData.observacoes} onChangeText={(t: string) => setCompanyData({...companyData, observacoes: t})} multiline numberOfLines={3} style={[styles.inputField, {height: 80}]} />
+
+             <View style={{height: 100}} /> 
+          </ScrollView>
         </View>
       </Modal>
     </View>
@@ -655,4 +822,85 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
   },
+  // Novos estilos para formulário
+  sectionHeader: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2196F3',
+    marginTop: 20,
+    marginBottom: 10,
+    paddingBottom: 5,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  inputGroup: {
+    marginBottom: 12,
+  },
+  inputLabel: {
+    fontSize: 14,
+    color: '#333',
+    marginBottom: 4,
+    fontWeight: '500',
+  },
+  inputField: {
+    backgroundColor: '#f9f9f9',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 16,
+    color: '#333',
+  },
+  switchRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingVertical: 8,
+  },
+  radioGroup: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  radioBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    backgroundColor: '#fff',
+  },
+  radioBtnSelected: {
+    backgroundColor: '#2196F3',
+    borderColor: '#2196F3',
+  },
+  radioText: {
+    color: '#666',
+    fontSize: 12,
+  },
+  radioTextSelected: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
 });
+
+// Componente auxiliar simples para Input
+const SimpleInput = ({ label, value, onChangeText, ...props }: any) => (
+  <View style={styles.inputGroup}>
+    <Text style={styles.inputLabel}>{label}</Text>
+    <TextInput 
+      style={styles.inputField}
+      value={value || ''}
+      onChangeText={onChangeText}
+      placeholderTextColor="#999"
+      {...props}
+    />
+  </View>
+);
+// Precisamos garantir que TextInput venha do escopo certo, mas como não posso mexer nos imports do topo facilmente agora, 
+// vou usar o TextInput global do React Native que já deve estar importado ou será necessário adicionar.
+// Vou assumir que TextInput está importado ou vou adicionar ele no topo.
+// ESPERE: `TextInput` NÃO está importado no topo do arquivo original pelo que vejo nas linhas 1-12.
+// Preciso adicionar TextInput nos imports.

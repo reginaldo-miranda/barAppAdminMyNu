@@ -49,7 +49,6 @@ model Product {
   tipoRel             Tipo?            @relation(fields: [tipoId], references: [id])
   unidadeRel          UnidadeMedida?   @relation(fields: [unidadeMedidaId], references: [id])
   saleItems           SaleItem[]
-  saleItems           SaleItem[]
   setoresImpressao    ProductSetorImpressao[]
 
 
@@ -401,4 +400,98 @@ enum RegraPreco {
   mais_caro
   media
   fixo
+}
+
+model Company {
+  id                Int       @id @default(autoincrement())
+  // 1. Identificação
+  razaoSocial       String
+  nomeFantasia      String
+  cnpj              String    @unique
+  inscricaoEstadual String?
+  inscricaoMunicipal String?
+
+  // 2. Endereço Fiscal
+  logradouro        String?
+  numero            String?
+  complemento       String?
+  bairro            String?
+  cidade            String?
+  uf                String?
+  cep               String?
+  ibge              String?
+
+  // 3. Contato
+  telefone          String?
+  telefoneSecundario String?
+  email             String?
+  whatsapp          String?
+
+  // 4. Dados Fiscais
+  regimeTributario  RegimeTributario @default(simples_nacional)
+  cnae              String?
+  contribuinteIcms  Boolean   @default(true)
+  ambienteFiscal    AmbienteFiscal @default(homologacao)
+
+  // 5. Emissão e Impressão
+  logo              String?   // Caminho ou URL
+  nomeImpressao     String?   // Nome fantasia para NFC-e
+  mensagemRodape    String?
+  serieNfce         Int       @default(1)
+  numeroInicialNfce Int       @default(1)
+
+  // 6. Responsável Legal
+  respNome          String?
+  respCpf           String?
+  respCargo         String?
+  respTelefone      String?
+  respEmail         String?
+
+  // 7. Cobrança e Manutenção
+  plano             String?
+  valorMensalidade  Decimal?  @db.Decimal(10, 2)
+  diaVencimento     Int?
+  dataInicioCobranca DateTime?
+  status            CompanyStatus @default(ativa)
+  formaCobranca     FormaCobranca @default(boleto)
+  emailCobranca     String?
+
+  // 8. Dados Bancários
+  banco             String?
+  agencia           String?
+  conta             String?
+  tipoConta         String?
+  chavePix          String?
+
+  // 9. Controle
+  dataCadastro      DateTime  @default(now())
+  ultimoPagamento   DateTime?
+  proximoVencimento DateTime?
+  diasAtraso        Int       @default(0)
+  observacoes       String?   @db.Text
+  
+  updatedAt         DateTime  @updatedAt
+}
+
+enum RegimeTributario {
+  simples_nacional
+  lucro_presumido
+  lucro_real
+}
+
+enum AmbienteFiscal {
+  homologacao
+  producao
+}
+
+enum CompanyStatus {
+  ativa
+  bloqueada
+  cancelada
+}
+
+enum FormaCobranca {
+  pix
+  boleto
+  cartao
 }
