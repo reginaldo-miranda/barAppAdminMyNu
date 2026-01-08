@@ -419,6 +419,7 @@ router.get('/:id', async (req, res) => {
     const prisma = getActivePrisma();
     const id = Number(req.params.id);
     const { produtoId, quantidade } = req.body;
+    const tamanhoId = req.body?.tamanhoId ? Number(req.body.tamanhoId) : null;
     const variacao = req.body?.variacao || null;
     const origemRaw = (req.body?.origem || req.headers['x-client-mode'] || '').toString().toLowerCase();
     const origem = origemRaw === 'tablet' ? 'tablet' : 'default';
@@ -448,16 +449,27 @@ router.get('/:id', async (req, res) => {
       return res.status(400).json({ error: 'Produto inativo' });
     }
 
-    // Busca item pendente idêntico (mesmo produto e SEM variação)
+    // Validar tamanho se fornecido
+    let tamanho = null;
+    if (tamanhoId) {
+       tamanho = await prisma.productSize.findUnique({ where: { id: tamanhoId } });
+       if (!tamanho) return res.status(400).json({ error: 'Tamanho não encontrado' });
+       if (tamanho.produtoId !== prodId) return res.status(400).json({ error: 'Tamanho não pertence ao produto' });
+       // if (!tamanho.ativo) return res.status(400).json({ error: 'Tamanho inativo' }); // Opcional
+    }
+
+    // Busca item pendente idêntico (mesmo produto e SEM variação e MESMO tamanho)
     const itemExistente = Array.isArray(venda.itens)
       ? venda.itens.find((i) => {
           const sameProduct = Number(i.productId) === prodId;
           const isPendente = i.status === 'pendente';
           // Garante que o item existente não tenha variação (nem tipo, nem opções)
-          // Isso evita mesclar um produto simples com um que já tem variação
           const hasNoVariation = !i.variacaoTipo && (!i.variacaoOpcoes || (Array.isArray(i.variacaoOpcoes) && i.variacaoOpcoes.length === 0));
           
-          return sameProduct && isPendente && hasNoVariation;
+          // Verifica tamanho
+          const sameSize = tamanhoId ? (i.tamanhoId === tamanhoId) : (i.tamanhoId === null);
+
+          return sameProduct && isPendente && hasNoVariation && sameSize;
       })
       : null;
       
@@ -465,16 +477,22 @@ router.get('/:id', async (req, res) => {
     const shouldMerge = !variacao && itemExistente;
     if (shouldMerge) {
       const novaQtd = Number(itemExistente.quantidade || 0) + Number(quantidade || 1);
+      // Recalcula subtotal com base no PREÇO ORIGINAL DO ITEM (ou atualiza se quiser)
+      // Se tiver tamanho, o precoUnitario do item já deve estar correto.
       await prisma.saleItem.update({
         where: { id: itemExistente.id },
         data: {
           quantidade: novaQtd,
-          subtotal: String((Number(novaQtd) * Number(itemExistente.precoUnitario ?? produto.precoVenda)).toFixed(2))
+          subtotal: String((Number(novaQtd) * Number(itemExistente.precoUnitario)).toFixed(2))
         }
       });
     } else {
-      // ... create new item code (unchanged blocks follow, just ensuring I don't break the else block structure)
-      let precoUnit = produto.precoVenda;
+      let precoUnit = tamanho ? tamanho.preco : produto.precoVenda;
+      let nomeProdutoFinal = produto.nome;
+      if (tamanho) {
+        nomeProdutoFinal = `${produto.nome} (${tamanho.nome})`;
+      }
+
       let variacaoTipo = null;
       let variacaoRegra = null;
       let variacaoOpcoes = null;
@@ -545,7 +563,7 @@ router.get('/:id', async (req, res) => {
         data: {
           saleId: venda.id,
           productId: prodId,
-          nomeProduto: produto.nome,
+          nomeProduto: nomeProdutoFinal,
           quantidade: qty,
           precoUnitario: String(Number(precoUnit).toFixed(2)),
           subtotal: String(Number(qty * precoUnit).toFixed(2)),
@@ -554,7 +572,8 @@ router.get('/:id', async (req, res) => {
           origem,
           variacaoTipo: variacaoTipo || undefined,
           variacaoRegraPreco: variacaoRegra || undefined,
-          variacaoOpcoes: variacaoOpcoes || undefined
+          variacaoOpcoes: variacaoOpcoes || undefined,
+          tamanhoId: tamanho ? tamanho.id : undefined,
         },
       });
     }

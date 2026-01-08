@@ -1,0 +1,449 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "darwin", "windows"]
+  engineType    = "binary"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL_LOCAL")
+}
+
+model caixa {
+  id                      Int          @id @default(autoincrement())
+  dataAbertura            DateTime     @default(now())
+  dataFechamento          DateTime?
+  valorAbertura           Decimal      @db.Decimal(10, 2)
+  valorFechamento         Decimal?     @db.Decimal(10, 2)
+  totalVendas             Decimal      @default(0.00) @db.Decimal(10, 2)
+  totalDinheiro           Decimal      @default(0.00) @db.Decimal(10, 2)
+  totalCartao             Decimal      @default(0.00) @db.Decimal(10, 2)
+  totalPix                Decimal      @default(0.00) @db.Decimal(10, 2)
+  funcionarioAberturaId   Int
+  funcionarioFechamentoId Int?
+  status                  caixa_status @default(aberto)
+  observacoes             String?
+  createdAt               DateTime     @default(now())
+  updatedAt               DateTime
+
+  @@index([funcionarioAberturaId], map: "Caixa_funcionarioAberturaId_fkey")
+  @@index([funcionarioFechamentoId], map: "Caixa_funcionarioFechamentoId_fkey")
+}
+
+model caixavenda {
+  id             Int                       @id @default(autoincrement())
+  caixaId        Int
+  vendaId        Int
+  valor          Decimal                   @db.Decimal(10, 2)
+  formaPagamento caixavenda_formaPagamento
+  dataVenda      DateTime
+  itensPagos     Json?
+  observacoes    String?
+
+  @@index([caixaId], map: "CaixaVenda_caixaId_fkey")
+  @@index([vendaId], map: "CaixaVenda_vendaId_fkey")
+}
+
+model categoria {
+  id           Int      @id @default(autoincrement())
+  nome         String   @unique(map: "Categoria_nome_key")
+  descricao    String?
+  ativo        Boolean  @default(true)
+  dataInclusao DateTime @default(now())
+}
+
+model company {
+  id                 Int                      @id @default(autoincrement())
+  razaoSocial        String
+  nomeFantasia       String
+  cnpj               String                   @unique(map: "Company_cnpj_key")
+  inscricaoEstadual  String?
+  inscricaoMunicipal String?
+  logradouro         String?
+  numero             String?
+  complemento        String?
+  bairro             String?
+  cidade             String?
+  uf                 String?
+  cep                String?
+  ibge               String?
+  telefone           String?
+  telefoneSecundario String?
+  email              String?
+  whatsapp           String?
+  regimeTributario   company_regimeTributario @default(simples_nacional)
+  cnae               String?
+  contribuinteIcms   Boolean                  @default(true)
+  ambienteFiscal     company_ambienteFiscal   @default(homologacao)
+  logo               String?
+  nomeImpressao      String?
+  mensagemRodape     String?
+  serieNfce          Int                      @default(1)
+  numeroInicialNfce  Int                      @default(1)
+  respNome           String?
+  respCpf            String?
+  respCargo          String?
+  respTelefone       String?
+  respEmail          String?
+  plano              String?
+  valorMensalidade   Decimal?                 @db.Decimal(10, 2)
+  diaVencimento      Int?
+  dataInicioCobranca DateTime?
+  status             company_status           @default(ativa)
+  formaCobranca      company_formaCobranca    @default(boleto)
+  emailCobranca      String?
+  banco              String?
+  agencia            String?
+  conta              String?
+  tipoConta          String?
+  chavePix           String?
+  dataCadastro       DateTime                 @default(now())
+  ultimoPagamento    DateTime?
+  proximoVencimento  DateTime?
+  diasAtraso         Int                      @default(0)
+  observacoes        String?                  @db.Text
+  updatedAt          DateTime
+}
+
+model customer {
+  id             Int       @id @default(autoincrement())
+  nome           String?
+  endereco       String?
+  cidade         String?
+  estado         String?
+  fone           String?
+  cpf            String    @unique(map: "Customer_cpf_key")
+  rg             String?
+  dataNascimento DateTime?
+  ativo          Boolean   @default(true)
+  dataInclusao   DateTime  @default(now())
+}
+
+model employee {
+  id           Int       @id @default(autoincrement())
+  nome         String
+  cpf          String?
+  email        String?
+  endereco     String?
+  bairro       String?
+  telefone     String?
+  cargo        String?
+  salario      Decimal?  @db.Decimal(10, 2)
+  dataAdmissao DateTime?
+  ativo        Boolean   @default(true)
+  dataInclusao DateTime  @default(now())
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model mesa {
+  id                       Int         @id @default(autoincrement())
+  numero                   Int         @unique(map: "Mesa_numero_key")
+  nome                     String
+  capacidade               Int
+  status                   mesa_status @default(livre)
+  vendaAtualId             Int?        @unique(map: "Mesa_vendaAtualId_key")
+  funcionarioResponsavelId Int?
+  nomeResponsavel          String?
+  clientesAtuais           Int         @default(0)
+  horaAbertura             DateTime?
+  observacoes              String?
+  tipo                     mesa_tipo   @default(interna)
+  ativo                    Boolean     @default(true)
+  createdAt                DateTime    @default(now())
+  updatedAt                DateTime
+
+  @@index([funcionarioResponsavelId], map: "Mesa_funcionarioResponsavelId_fkey")
+}
+
+model printer {
+  id           Int      @id @default(autoincrement())
+  nome         String   @unique(map: "Printer_nome_key")
+  modelo       String?
+  address      String?
+  driver       String?
+  ativo        Boolean  @default(true)
+  dataInclusao DateTime @default(now())
+}
+
+model printjob {
+  id          Int             @id @default(autoincrement())
+  saleId      Int?
+  productId   Int
+  setorId     Int
+  printerId   Int?
+  content     String
+  status      printjob_status @default(queued)
+  error       String?
+  createdAt   DateTime        @default(now())
+  processedAt DateTime?
+}
+
+model product {
+  id                  Int      @id @default(autoincrement())
+  nome                String
+  descricao           String?
+  precoCusto          Decimal  @db.Decimal(10, 2)
+  precoVenda          Decimal  @db.Decimal(10, 2)
+  categoria           String?
+  tipo                String?
+  grupo               String?
+  unidade             String   @default("un")
+  ativo               Boolean  @default(true)
+  dadosFiscais        String?
+  quantidade          Int      @default(0)
+  imagem              String?
+  tempoPreparoMinutos Int      @default(0)
+  disponivel          Boolean  @default(true)
+  dataInclusao        DateTime @default(now())
+  categoriaId         Int?
+  groupId             Int?
+  tipoId              Int?
+  unidadeMedidaId     Int?
+  temVariacao         Boolean  @default(false)
+
+  @@index([categoriaId], map: "Product_categoriaId_fkey")
+  @@index([groupId], map: "Product_groupId_fkey")
+  @@index([tipoId], map: "Product_tipoId_fkey")
+  @@index([unidadeMedidaId], map: "Product_unidadeMedidaId_fkey")
+}
+
+model productgroup {
+  id           Int      @id @default(autoincrement())
+  nome         String   @unique(map: "ProductGroup_nome_key")
+  descricao    String?
+  icone        String   @default("?")
+  ativo        Boolean  @default(true)
+  dataInclusao DateTime @default(now())
+}
+
+model productsetorimpressao {
+  productId Int
+  setorId   Int
+
+  @@id([productId, setorId])
+  @@index([setorId], map: "ProductSetorImpressao_setorId_fkey")
+}
+
+model sale {
+  id                       Int                 @id @default(autoincrement())
+  funcionarioId            Int?
+  clienteId                Int?
+  mesaId                   Int?
+  responsavelNome          String?
+  responsavelFuncionarioId Int?
+  funcionarioNome          String?
+  funcionarioAberturaNome  String?
+  funcionarioAberturaId    Int?
+  numeroComanda            String?             @unique(map: "Sale_numeroComanda_key")
+  nomeComanda              String?
+  tipoVenda                sale_tipoVenda      @default(balcao)
+  subtotal                 Decimal             @db.Decimal(10, 2)
+  desconto                 Decimal             @db.Decimal(10, 2)
+  total                    Decimal             @db.Decimal(10, 2)
+  formaPagamento           sale_formaPagamento @default(dinheiro)
+  status                   sale_status         @default(aberta)
+  dataVenda                DateTime            @default(now())
+  dataFinalizacao          DateTime?
+  observacoes              String?
+  tempoPreparoEstimado     Int                 @default(0)
+  impressaoCozinha         Boolean             @default(false)
+  impressaoBar             Boolean             @default(false)
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime
+
+  @@index([clienteId], map: "Sale_clienteId_fkey")
+  @@index([funcionarioAberturaId], map: "Sale_funcionarioAberturaId_fkey")
+  @@index([funcionarioId], map: "Sale_funcionarioId_fkey")
+  @@index([mesaId], map: "Sale_mesaId_fkey")
+  @@index([responsavelFuncionarioId], map: "Sale_responsavelFuncionarioId_fkey")
+}
+
+model saleitem {
+  id                 Int                          @id @default(autoincrement())
+  saleId             Int
+  productId          Int?
+  nomeProduto        String
+  quantidade         Int
+  precoUnitario      Decimal                      @db.Decimal(10, 2)
+  subtotal           Decimal                      @db.Decimal(10, 2)
+  status             String                       @default("pendente") @db.VarChar(20)
+  createdAt          DateTime                     @default(now())
+  preparedAt         DateTime?
+  preparedById       Int?
+  origem             String?                      @default("default") @db.VarChar(20)
+  variacaoOpcoes     Json?
+  variacaoRegraPreco saleitem_variacaoRegraPreco?
+  variacaoTipo       String?                      @db.VarChar(50)
+
+  @@index([preparedById], map: "SaleItem_preparedById_fkey")
+  @@index([productId], map: "SaleItem_productId_fkey")
+  @@index([saleId], map: "SaleItem_saleId_fkey")
+}
+
+model setorimpressao {
+  id              Int                      @id @default(autoincrement())
+  nome            String                   @unique(map: "SetorImpressao_nome_key")
+  descricao       String?
+  modoEnvio       setorimpressao_modoEnvio @default(impressora)
+  whatsappDestino String?
+  ativo           Boolean                  @default(true)
+  dataInclusao    DateTime                 @default(now())
+  printerId       Int?
+
+  @@index([printerId], map: "SetorImpressao_printerId_fkey")
+}
+
+model tipo {
+  id           Int      @id @default(autoincrement())
+  nome         String   @unique(map: "Tipo_nome_key")
+  ativo        Boolean  @default(true)
+  dataInclusao DateTime @default(now())
+  descricao    String?
+}
+
+model unidademedida {
+  id           Int      @id @default(autoincrement())
+  nome         String   @unique(map: "UnidadeMedida_nome_key")
+  sigla        String   @unique(map: "UnidadeMedida_sigla_key")
+  ativo        Boolean  @default(true)
+  dataInclusao DateTime @default(now())
+  descricao    String?
+}
+
+model user {
+  id           Int       @id @default(autoincrement())
+  email        String    @unique(map: "User_email_key")
+  senha        String
+  nome         String
+  tipo         user_tipo @default(funcionario)
+  employeeId   Int?
+  permissoes   Json?
+  ativo        Boolean   @default(true)
+  dataInclusao DateTime  @default(now())
+  ultimoLogin  DateTime?
+}
+
+model variationtype {
+  id            Int                      @id @default(autoincrement())
+  nome          String                   @unique(map: "VariationType_nome_key")
+  maxOpcoes     Int                      @default(1)
+  categoriasIds Json?
+  regraPreco    variationtype_regraPreco @default(mais_caro)
+  precoFixo     Decimal?                 @db.Decimal(10, 2)
+  ativo         Boolean                  @default(true)
+  dataInclusao  DateTime                 @default(now())
+}
+
+model whatsappmessagelog {
+  id        Int                       @id @default(autoincrement())
+  saleId    Int?
+  destino   String
+  content   String
+  status    whatsappmessagelog_status @default(queued)
+  error     String?
+  createdAt DateTime                  @default(now())
+  sentAt    DateTime?
+}
+
+enum setorimpressao_modoEnvio {
+  impressora
+  whatsapp
+}
+
+enum caixavenda_formaPagamento {
+  dinheiro
+  cartao
+  pix
+}
+
+enum mesa_status {
+  livre
+  ocupada
+  reservada
+  manutencao
+}
+
+enum user_tipo {
+  admin
+  funcionario
+}
+
+enum variationtype_regraPreco {
+  mais_caro
+  media
+  fixo
+}
+
+enum whatsappmessagelog_status {
+  queued
+  sent
+  failed
+}
+
+enum printjob_status {
+  queued
+  processing
+  done
+  failed
+}
+
+enum caixa_status {
+  aberto
+  fechado
+}
+
+enum mesa_tipo {
+  interna
+  externa
+  vip
+  reservada
+  balcao
+}
+
+enum sale_tipoVenda {
+  balcao
+  mesa
+  delivery
+  comanda
+}
+
+enum saleitem_variacaoRegraPreco {
+  mais_caro
+  media
+  fixo
+}
+
+enum sale_formaPagamento {
+  dinheiro
+  cartao
+  pix
+}
+
+enum sale_status {
+  aberta
+  finalizada
+  cancelada
+}
+
+enum company_regimeTributario {
+  simples_nacional
+  lucro_presumido
+  lucro_real
+}
+
+enum company_ambienteFiscal {
+  homologacao
+  producao
+}
+
+enum company_status {
+  ativa
+  bloqueada
+  cancelada
+}
+
+enum company_formaCobranca {
+  pix
+  boleto
+  cartao
+}

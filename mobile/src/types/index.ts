@@ -22,7 +22,7 @@ export interface CartItem {
 
 export interface Sale {
   _id: string;
-  status: 'aberta' | 'fechada' | 'cancelada';
+  status: 'aberta' | 'fechada' | 'cancelada' | 'finalizada';
   itens: CartItem[];
   observacoes?: string;
   total: number;
@@ -45,6 +45,8 @@ export interface Product {
   unidade?: string;
   unidadeMedidaId?: number;
   temVariacao?: boolean;
+  possuiVariacaoTamanho?: boolean;
+  sizes?: { id: number; nome: string; preco: number; ativo: boolean }[];
 }
 
 export interface PaymentMethod {

@@ -50,6 +50,8 @@ export default function SaleScreen() {
 
   const [variationProduct, setVariationProduct] = useState<Product | null>(null);
   const [splitModalVisible, setSplitModalVisible] = useState(false);
+  const [sizeSelectorVisible, setSizeSelectorVisible] = useState(false);
+  const [selectedProductForSize, setSelectedProductForSize] = useState<Product | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -352,6 +354,15 @@ export default function SaleScreen() {
     }
 
     try {
+      if ((product as any)?.possuiVariacaoTamanho) {
+        if (!product.sizes || product.sizes.length === 0) {
+           Alert.alert('Aviso', 'Produto requer tamanho, mas nenhum foi cadastrado.');
+           return;
+        }
+        setSelectedProductForSize(product);
+        setSizeSelectorVisible(true);
+        return;
+      }
       if ((product as any)?.temVariacao) {
         setVariationProduct(product);
         setVariationVisible(true);
@@ -450,6 +461,8 @@ export default function SaleScreen() {
     }
   };
 
+  const [selectedSizeForVariation, setSelectedSizeForVariation] = useState<any>(null);
+
   const confirmVariation = async (payload: any) => {
     try {
       if (!sale || !variationProduct) return;
@@ -458,17 +471,65 @@ export default function SaleScreen() {
         quantidade: 1,
         variacao: payload,
       };
+      
+      // Se tiver tamanho selecionado previamente, inclui no payload
+      if (selectedSizeForVariation) {
+        itemData.tamanhoId = selectedSizeForVariation.id;
+      }
+
       const clientMode = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
       if (String(clientMode).toLowerCase() === 'tablet') itemData.origem = 'tablet';
       const response = await saleService.addItem(sale._id, itemData);
       setSale(response.data);
       setCart(response.data.itens || []);
-      Alert.alert('Sucesso', `${variationProduct.nome} foi adicionado com variação!`);
-    } catch (e) {
-      Alert.alert('Erro', 'Não foi possível adicionar com variação');
+      
+      const sizeMsg = selectedSizeForVariation ? ` (${selectedSizeForVariation.nome})` : '';
+      Alert.alert('Sucesso', `${variationProduct.nome}${sizeMsg} foi adicionado com variação!`);
+    } catch (e: any) {
+      Alert.alert('Erro', e?.response?.data?.error || 'Não foi possível adicionar com variação');
     } finally {
       setVariationVisible(false);
       setVariationProduct(null);
+      setSelectedSizeForVariation(null);
+    }
+  };
+
+  const handleSizeSelected = async (size: any) => {
+    if (!sale || !selectedProductForSize) return;
+    
+    // VERIFICAÇÃO CRÍTICA: Se o produto TAMBÉM tem variação (meio a meio), 
+    // não adiciona direto! Abre o modal de variação primeiro.
+    if ((selectedProductForSize as any)?.temVariacao) {
+      console.log('Product has size AND variation. Chaining to Variation Modal...');
+      setSelectedSizeForVariation(size);
+      setVariationProduct(selectedProductForSize);
+      setVariationVisible(true);
+      
+      // Fecha o modal de tamanho e limpa o produto de seleção de tamanho
+      setSizeSelectorVisible(false);
+      setSelectedProductForSize(null);
+      return;
+    }
+
+    const itemData: any = {
+      produtoId: parseInt(String(selectedProductForSize._id || (selectedProductForSize as any).id), 10),
+      quantidade: 1,
+      tamanhoId: size.id
+    };
+    const clientMode = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
+    if (String(clientMode).toLowerCase() === 'tablet') itemData.origem = 'tablet';
+
+    try {
+       const response = await saleService.addItem(sale._id, itemData);
+       setSale(response.data);
+       setCart(response.data.itens || []);
+       Alert.alert('Sucesso', `${selectedProductForSize.nome} (${size.nome}) adicionado!`);
+    } catch (error: any) {
+       console.error('Erro ao adicionar tamanho:', error);
+       Alert.alert('Erro', error?.response?.data?.error || 'Falha ao adicionar produto.');
+    } finally {
+       setSizeSelectorVisible(false);
+       setSelectedProductForSize(null);
     }
   };
 
@@ -1057,6 +1118,35 @@ export default function SaleScreen() {
            }
         }}
       />
+      <Modal visible={sizeSelectorVisible} transparent animationType="slide" onRequestClose={() => setSizeSelectorVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxHeight: '80%' }]}>
+            <Text style={styles.modalTitle}>Selecione o Tamanho</Text>
+            <Text style={[styles.modalSubtitle, { marginBottom: 10 }]}>{selectedProductForSize?.nome}</Text>
+            
+            <View>
+              {selectedProductForSize?.sizes?.map((size) => (
+                <TouchableOpacity 
+                   key={size.id} 
+                   style={[styles.paymentOption, { justifyContent: 'space-between' }]}
+                   onPress={() => handleSizeSelected(size)}
+                >
+                   <Text style={{ fontSize: 16 }}>{size.nome}</Text>
+                   <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#4CAF50' }}>
+                     R$ {Number(size.preco).toFixed(2)}
+                   </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setSizeSelectorVisible(false)}>
+                <Text style={styles.cancelButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

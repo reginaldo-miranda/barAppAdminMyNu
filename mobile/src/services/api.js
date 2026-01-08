@@ -451,6 +451,9 @@ export const productService = {
   getUsedGroups: () => api.get('/product/groups/used'),
   getUsedSectors: () => api.get('/product/setores/used'),
   listBySector: (sectorId) => api.get('/product/list', { params: { setorId: sectorId } }),
+  getSizes: (id) => api.get(`/product/${id}/tamanhos`),
+  addSize: (id, data) => api.post(`/product/${id}/tamanhos`, data),
+  deleteSize: (sizeId) => api.delete(`/product/tamanhos/${sizeId}`),
 };
 
 export const categoryService = {
