@@ -45,6 +45,9 @@ model Product {
   unidadeMedidaId     Int?
   temVariacao         Boolean          @default(false)
   possuiVariacaoTamanho Boolean        @default(false)
+  permiteMeioAMeio    Boolean          @default(false)
+  regraVariacao       RegraPreco       @default(mais_caro)
+  precoFixoVariacao   Decimal?         @db.Decimal(10, 2)
   sizes               ProductSize[]
   categoriaRel        Categoria?       @relation(fields: [categoriaId], references: [id])
   grupoRel            ProductGroup?    @relation(fields: [groupId], references: [id])

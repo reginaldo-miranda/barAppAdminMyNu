@@ -98,6 +98,10 @@ export default function CadastroProduto() {
 
   const [temVariacao, setTemVariacao] = useState(false);
   const [possuiVariacaoTamanho, setPossuiVariacaoTamanho] = useState(false);
+  const [permiteMeioAMeio, setPermiteMeioAMeio] = useState(false);
+  const [regraVariacao, setRegraVariacao] = useState('mais_caro');
+  const [precoFixoVariacao, setPrecoFixoVariacao] = useState('');
+
   const [sizes, setSizes] = useState<any[]>([]);
   const [loadingSizes, setLoadingSizes] = useState(false);
   const [newSizeName, setNewSizeName] = useState('');
@@ -314,6 +318,10 @@ export default function CadastroProduto() {
         setAtivo(produto.ativo !== undefined ? produto.ativo : true);
         setTemVariacao(!!(produto as any)?.temVariacao);
         setPossuiVariacaoTamanho(!!(produto as any)?.possuiVariacaoTamanho);
+        setPermiteMeioAMeio(!!(produto as any)?.permiteMeioAMeio);
+        setRegraVariacao((produto as any)?.regraVariacao || 'mais_caro');
+        setPrecoFixoVariacao((produto as any)?.precoFixoVariacao ? Number((produto as any)?.precoFixoVariacao).toFixed(2) : '');
+
         setSizes((produto as any)?.sizes || []);
         setDataInclusao(produto.dataInclusao ? new Date(produto.dataInclusao) : new Date());
         setDataAlteracao(new Date());
@@ -403,6 +411,9 @@ export default function CadastroProduto() {
         ativo: ativo,
         temVariacao: temVariacao,
         possuiVariacaoTamanho: possuiVariacaoTamanho,
+        permiteMeioAMeio: permiteMeioAMeio,
+        regraVariacao: regraVariacao,
+        precoFixoVariacao: precoFixoVariacao ? parseFloat(precoFixoVariacao.replace(',', '.')) : null,
         categoriaId: categoriaSelecionada ? Number(categoriaSelecionada.id) : undefined,
         tipoId: tipoSelecionado ? Number(tipoSelecionado.id) : undefined,
         unidadeMedidaId: unidadeSelecionada ? Number(unidadeSelecionada.id) : undefined
@@ -461,6 +472,9 @@ export default function CadastroProduto() {
                     setCategoriaId('');
                     setTipoId('');
                     setUnidadeId('');
+                    setPermiteMeioAMeio(false);
+                    setRegraVariacao('mais_caro');
+                    setPrecoFixoVariacao('');
                     setEstoque('');
                     setEstoqueMinimo('');
                     setAtivo(true);
@@ -802,6 +816,51 @@ export default function CadastroProduto() {
                 thumbColor={temVariacao ? '#fff' : '#f4f3f4'}
               />
             </View>
+            
+            {temVariacao && (
+              <View style={{ marginTop: 10, padding: 10, backgroundColor: '#f9f9f9', borderRadius: 8, borderWidth: 1, borderColor: '#eee' }}>
+                 <View style={styles.switchContainer}>
+                    <Text style={styles.label}>Permite Meio a Meio?</Text>
+                    <Switch
+                      value={permiteMeioAMeio}
+                      onValueChange={(value) => handleFieldChange(setPermiteMeioAMeio, value)}
+                      trackColor={{ false: '#ccc', true: '#4CAF50' }}
+                      thumbColor={permiteMeioAMeio ? '#fff' : '#f4f3f4'}
+                    />
+                 </View>
+                 
+                 {permiteMeioAMeio && (
+                   <>
+                     <Text style={[styles.label, { marginTop: 10 }]}>Regra de Preço (Meio a Meio)</Text>
+                     <View style={styles.pickerContainer}>
+                       <Picker
+                          selectedValue={regraVariacao}
+                          onValueChange={(v) => handleFieldChange(setRegraVariacao, v)}
+                          style={styles.picker}
+                       >
+                          <Picker.Item label="Maior Preço" value="mais_caro" />
+                          <Picker.Item label="Média dos Preços" value="media" />
+                          <Picker.Item label="Preço Fixo" value="fixo" />
+                       </Picker>
+                     </View>
+                     
+                     {regraVariacao === 'fixo' && (
+                       <View style={[styles.inputGroup, { marginTop: 10 }]}>
+                          <Text style={styles.label}>Preço Fixo (R$)</Text>
+                          <TextInput
+                            style={styles.input}
+                            value={precoFixoVariacao}
+                            onChangeText={(t) => setPrecoFixoVariacao(formatPrice(t))}
+                            placeholder="0,00"
+                            placeholderTextColor="#999"
+                            keyboardType="numeric"
+                          />
+                       </View>
+                     )}
+                   </>
+                 )}
+              </View>
+            )}
           </View>
 
           {/* Card de Variação de Tamanho */}
@@ -1062,27 +1121,32 @@ export default function CadastroProduto() {
                 <TouchableOpacity
                   style={[
                     styles.unidadeItem,
-                    selectedSetores.includes(item.id) && styles.unidadeItemSelected
+                    (selectedSetores || []).includes(item.id) && styles.unidadeItemSelected
                   ]}
                   onPress={() => {
-                    setSelectedSetores(prev => prev.includes(item.id) ? prev.filter(id => id !== item.id) : [...prev, item.id]);
+                    setSelectedSetores(prev => {
+                      const current = prev || [];
+                      return current.includes(item.id) 
+                        ? current.filter(id => id !== item.id) 
+                        : [...current, item.id];
+                    });
                   }}
                 >
                   <View style={styles.unidadeItemContent}>
                     <Text style={[
                       styles.unidadeItemName,
-                      selectedSetores.includes(item.id) && styles.unidadeItemSelectedText
+                      (selectedSetores || []).includes(item.id) && styles.unidadeItemSelectedText
                     ]}>
                       {item.nome}
                     </Text>
                     <Text style={[
                       styles.unidadeItemSigla,
-                      selectedSetores.includes(item.id) && styles.unidadeItemSelectedText
+                      (selectedSetores || []).includes(item.id) && styles.unidadeItemSelectedText
                     ]}>
                       {item.modoEnvio === 'whatsapp' ? 'WhatsApp' : 'Impressora'}
                     </Text>
                   </View>
-                  {selectedSetores.includes(item.id) && (
+                  {(selectedSetores || []).includes(item.id) && (
                     <Ionicons name="checkmark" size={20} color="#2196F3" />
                   )}
                 </TouchableOpacity>

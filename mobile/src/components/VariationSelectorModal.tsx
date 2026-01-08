@@ -13,9 +13,10 @@ interface VariationSelectorModalProps {
   onClose: () => void;
   onConfirm: (payload: { tipoId?: number; tipoNome?: string; regraPreco?: 'mais_caro'|'media'|'fixo'; maxOpcoes?: number; opcoes: Array<{ productId: number }>; precoFixo?: number }) => void;
   onConfirmWhole?: () => void;
+  selectedSize?: { id: number; nome: string }; // Add selectedSize prop
 }
 
-export default function VariationSelectorModal({ visible, product, onClose, onConfirm, onConfirmWhole }: VariationSelectorModalProps) {
+export default function VariationSelectorModal({ visible, product, onClose, onConfirm, onConfirmWhole, selectedSize }: VariationSelectorModalProps) {
   const [tipos, setTipos] = useState<VariationType[]>([]);
   const [loadingTipos, setLoadingTipos] = useState(false);
   const [selectedTipo, setSelectedTipo] = useState<VariationType | null>(null);
@@ -79,6 +80,7 @@ export default function VariationSelectorModal({ visible, product, onClose, onCo
         categoriaId: p?.categoriaId ?? undefined,
         ativo: !!p?.ativo,
         disponivel: !!p?.disponivel,
+        sizes: Array.isArray(p?.sizes) ? p.sizes : [],
       }));
       setOptionsProducts(normalized as any);
     } catch (e) {
@@ -108,9 +110,28 @@ export default function VariationSelectorModal({ visible, product, onClose, onCo
 
   const precoCalculado = useMemo(() => {
     try {
-      const rule = String(selectedTipo?.regraPreco || 'mais_caro') as 'mais_caro'|'media'|'fixo';
+      // Determine effective rule
+      let rule = String(selectedTipo?.regraPreco || 'mais_caro') as 'mais_caro'|'media'|'fixo';
+      let fixedPrice = selectedTipo?.precoFixo ?? undefined;
+      
+      if ((product as any)?.permiteMeioAMeio && (product as any)?.regraVariacao) {
+         rule = String((product as any).regraVariacao) as any;
+         if (rule === 'fixo' && (product as any)?.precoFixoVariacao) {
+           fixedPrice = Number((product as any).precoFixoVariacao);
+         }
+      }
+
       const chosen = optionsProducts.filter((p) => selectedOpcoes.includes(parseInt(String((p as any)?._id ?? (p as any)?.id ?? 0), 10)));
-      const precos = chosen.map((p) => Number(p.precoVenda || 0));
+      
+      // Calculate prices for chosen options (respecting size)
+      const precos = chosen.map((p) => {
+         if (selectedSize && Array.isArray((p as any).sizes)) {
+            const match = (p as any).sizes.find((s: any) => s.nome === selectedSize.nome);
+            if (match) return Number(match.preco);
+         }
+         return Number(p.precoVenda || 0);
+      });
+
       const max = Number(selectedTipo?.maxOpcoes || 1);
       const frac = precos.map((_, idx) => {
         const p = chosen[idx];
@@ -119,11 +140,12 @@ export default function VariationSelectorModal({ visible, product, onClose, onCo
         if (Number.isFinite(f) && f > 0) return f;
         return max > 1 ? (1 / max) : 1;
       });
-      return computeVariationPrice(rule, Number(product?.precoVenda || 0), precos, selectedTipo?.precoFixo ?? undefined, frac);
+      
+      return computeVariationPrice(rule, Number(product?.precoVenda || 0), precos, fixedPrice, frac);
     } catch {
       return Number(product?.precoVenda || 0);
     }
-  }, [selectedTipo, selectedOpcoes, optionsProducts, product, fractionsMap]);
+  }, [selectedTipo, selectedOpcoes, optionsProducts, product, fractionsMap, selectedSize]);
 
   const displayedOptions = useMemo(() => {
     const arr = Array.isArray(optionsProducts) ? optionsProducts : [];

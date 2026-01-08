@@ -513,7 +513,10 @@ router.get('/:id', async (req, res) => {
           if (opcoesIds.length === 0 || opcoesIds.length > maxAllowed) {
             return res.status(400).json({ error: 'Quantidade de opções inválida para a variação' });
           }
-          const prods = await prisma.product.findMany({ where: { id: { in: opcoesIds }, ativo: true } });
+          const prods = await prisma.product.findMany({ 
+            where: { id: { in: opcoesIds }, ativo: true },
+            include: { sizes: { where: { ativo: true } } }
+          });
           if (prods.length !== opcoesIds.length) {
             return res.status(400).json({ error: 'Opções de variação inválidas' });
           }
@@ -526,9 +529,24 @@ router.get('/:id', async (req, res) => {
               return res.status(400).json({ error: 'Opção fora das categorias aplicáveis' });
             }
           }
-          const precos = prods.map((p) => Number(p.precoVenda));
+          
+          const precos = prods.map((p) => {
+             // Se tiver tamanho selecionado no produto principal, buscar tamanho correspondente (pelo nome) no produto da variação
+             if (tamanho && Array.isArray(p.sizes)) {
+               const matchSize = p.sizes.find(s => s.nome === tamanho.nome);
+               if (matchSize) return Number(matchSize.preco);
+             }
+             return Number(p.precoVenda);
+          });
+          
           const fractions = opcoesArr.map((o) => Number(o?.fracao || 0)).filter((f) => Number.isFinite(f) && f > 0);
-          const regra = String(vt?.regraPreco || variacao?.regraPreco || 'mais_caro');
+          
+          // Definir regra: Se produto permitir meio a meio, usa a regra dele. Caso contrário, usa do tipo de variação.
+          let regra = String(vt?.regraPreco || variacao?.regraPreco || 'mais_caro');
+          if (produto.permiteMeioAMeio && produto.regraVariacao) {
+             regra = String(produto.regraVariacao);
+          }
+
           if (regra === 'mais_caro') {
             precoUnit = Math.max(...precos);
           } else if (regra === 'media') {
@@ -541,7 +559,13 @@ router.get('/:id', async (req, res) => {
               precoUnit = precos.length > 0 ? (sum / precos.length) : produto.precoVenda;
             }
           } else if (regra === 'fixo') {
-            const pf = vt?.precoFixo !== null && vt?.precoFixo !== undefined ? Number(vt.precoFixo) : Number(variacao?.precoFixo || 0);
+            // Prioridade para preco fixo do produto se a regra vier dele
+            let pf = 0;
+            if (produto.permiteMeioAMeio && produto.regraVariacao === 'fixo') {
+               pf = Number(produto.precoFixoVariacao || 0);
+            } else {
+               pf = vt?.precoFixo !== null && vt?.precoFixo !== undefined ? Number(vt.precoFixo) : Number(variacao?.precoFixo || 0);
+            }
             precoUnit = pf > 0 ? pf : produto.precoVenda;
           }
           variacaoTipo = vt ? vt.nome : (tipoNome || null);

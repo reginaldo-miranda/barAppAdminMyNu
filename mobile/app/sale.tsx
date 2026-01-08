@@ -971,9 +971,10 @@ export default function SaleScreen() {
       <VariationSelectorModal
         visible={variationVisible}
         product={variationProduct as any}
-        onClose={() => { setVariationVisible(false); setVariationProduct(null); }}
+        onClose={() => { setVariationVisible(false); setVariationProduct(null); setSelectedSizeForVariation(null); }}
         onConfirm={confirmVariation}
         onConfirmWhole={confirmVariationWhole}
+        selectedSize={selectedSizeForVariation}
       />
 
       {!isViewMode && cart.length > 0 && (

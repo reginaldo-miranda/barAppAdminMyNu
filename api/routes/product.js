@@ -30,6 +30,9 @@ const mapProduct = (p) => {
     unidadeMedidaId: p.unidadeMedidaId || null,
     dataInclusao: p.dataInclusao,
     possuiVariacaoTamanho: !!p.possuiVariacaoTamanho,
+    permiteMeioAMeio: !!p.permiteMeioAMeio,
+    regraVariacao: p.regraVariacao || 'mais_caro',
+    precoFixoVariacao: p.precoFixoVariacao ? Number(p.precoFixoVariacao) : null,
     sizes: Array.isArray(p.sizes) ? p.sizes.map(s => ({
       id: s.id,
       nome: s.nome,
@@ -64,7 +67,7 @@ router.get("/", async (req, res) => {
 router.post("/create", async (req, res) => {
   try {
     const prisma = getActivePrisma();
-    const { nome, descricao, preco, precoVenda, precoCusto, categoria, tipo, grupo, unidade, estoque, quantidade, estoqueMinimo, ativo, dadosFiscais, imagem, tempoPreparoMinutos, disponivel, temVariacao, possuiVariacaoTamanho, categoriaId, tipoId, unidadeMedidaId, groupId, setoresImpressaoIds } = req.body;
+    const { nome, descricao, preco, precoVenda, precoCusto, categoria, tipo, grupo, unidade, estoque, quantidade, estoqueMinimo, ativo, dadosFiscais, imagem, tempoPreparoMinutos, disponivel, temVariacao, possuiVariacaoTamanho, permiteMeioAMeio, regraVariacao, precoFixoVariacao, categoriaId, tipoId, unidadeMedidaId, groupId, setoresImpressaoIds } = req.body;
 
     const pv = precoVenda ?? preco ?? 0;
     const pc = precoCusto ?? 0;
@@ -104,7 +107,11 @@ router.post("/create", async (req, res) => {
         tempoPreparoMinutos: tempoPreparoMinutos ?? 0,
         disponivel: disponivel ?? true,
         temVariacao: temVariacao !== undefined ? !!temVariacao : false,
-        possuiVariacaoTamanho: possuiVariacaoTamanho !== undefined ? !!possuiVariacaoTamanho : false
+        temVariacao: temVariacao !== undefined ? !!temVariacao : false,
+        possuiVariacaoTamanho: possuiVariacaoTamanho !== undefined ? !!possuiVariacaoTamanho : false,
+        permiteMeioAMeio: permiteMeioAMeio !== undefined ? !!permiteMeioAMeio : false,
+        regraVariacao: regraVariacao || 'mais_caro',
+        precoFixoVariacao: precoFixoVariacao ? String(Number(precoFixoVariacao).toFixed(2)) : null
       }
     });
 
@@ -354,7 +361,7 @@ router.put("/update/:id", async (req, res) => {
       return res.status(400).json({ error: "ID inválido" });
     }
 
-    const { nome, descricao, precoCusto, precoVenda, categoria, tipo, grupo, unidade, ativo, dadosFiscais, quantidade, imagem, tempoPreparoMinutos, disponivel, temVariacao, possuiVariacaoTamanho, preco, estoque, categoriaId, tipoId, unidadeMedidaId, groupId, setoresImpressaoIds } = req.body;
+    const { nome, descricao, precoCusto, precoVenda, categoria, tipo, grupo, unidade, ativo, dadosFiscais, quantidade, imagem, tempoPreparoMinutos, disponivel, temVariacao, possuiVariacaoTamanho, permiteMeioAMeio, regraVariacao, precoFixoVariacao, preco, estoque, categoriaId, tipoId, unidadeMedidaId, groupId, setoresImpressaoIds } = req.body;
     
     const updateData = {
       nome,
@@ -373,6 +380,9 @@ router.put("/update/:id", async (req, res) => {
       disponivel,
       temVariacao: temVariacao !== undefined ? !!temVariacao : undefined,
       possuiVariacaoTamanho: possuiVariacaoTamanho !== undefined ? !!possuiVariacaoTamanho : undefined,
+      permiteMeioAMeio: permiteMeioAMeio !== undefined ? !!permiteMeioAMeio : undefined,
+      regraVariacao: regraVariacao || undefined,
+      precoFixoVariacao: precoFixoVariacao !== undefined ? (precoFixoVariacao ? String(Number(precoFixoVariacao).toFixed(2)) : null) : undefined,
       categoriaId: categoriaId !== undefined ? (Number.isInteger(Number(categoriaId)) ? Number(categoriaId) : undefined) : undefined,
       tipoId: tipoId !== undefined ? (Number.isInteger(Number(tipoId)) ? Number(tipoId) : undefined) : undefined,
       groupId: groupId !== undefined ? (Number.isInteger(Number(groupId)) ? Number(groupId) : undefined) : undefined,
