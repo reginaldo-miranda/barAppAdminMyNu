@@ -44,37 +44,31 @@ model Product {
   tipoId              Int?
   unidadeMedidaId     Int?
   temVariacao         Boolean          @default(false)
-  possuiVariacaoTamanho Boolean        @default(false)
-  permiteMeioAMeio    Boolean          @default(false)
-  regraVariacao       RegraPreco       @default(mais_caro)
-  precoFixoVariacao   Decimal?         @db.Decimal(10, 2)
-  sizes               ProductSize[]
   categoriaRel        Categoria?       @relation(fields: [categoriaId], references: [id])
   grupoRel            ProductGroup?    @relation(fields: [groupId], references: [id])
   tipoRel             Tipo?            @relation(fields: [tipoId], references: [id])
   unidadeRel          UnidadeMedida?   @relation(fields: [unidadeMedidaId], references: [id])
   saleItems           SaleItem[]
   setoresImpressao    ProductSetorImpressao[]
+  tamanhos            ProductSize[]
+  temTamanhos         Boolean          @default(false)
 
 
-  @@index([categoriaId])
-  @@index([groupId])
-  @@index([tipoId])
-  @@index([unidadeMedidaId])
+  @@index([categoriaId], map: "Product_categoriaId_fkey")
+  @@index([groupId], map: "Product_groupId_fkey")
+  @@index([tipoId], map: "Product_tipoId_fkey")
+  @@index([unidadeMedidaId], map: "Product_unidadeMedidaId_fkey")
 }
 
-
 model ProductSize {
-  id        Int        @id @default(autoincrement())
-  produtoId Int
+  id        Int     @id @default(autoincrement())
+  productId Int
   nome      String
-  preco     Decimal    @db.Decimal(10, 2)
-  ativo     Boolean    @default(true)
-  product   Product    @relation(fields: [produtoId], references: [id], onDelete: Cascade)
-  sales     SaleItem[]
+  preco     Decimal @db.Decimal(10, 2)
+  ativo     Boolean @default(true)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  @@map("produto_tamanhos")
-  @@index([produtoId])
+  @@index([productId], map: "ProductSize_productId_fkey")
 }
 
 model ProductGroup {
@@ -224,7 +218,6 @@ model ProductSetorImpressao {
   setor     SetorImpressao @relation(fields: [setorId], references: [id], onDelete: Cascade)
 
   @@id([productId, setorId])
-  @@index([setorId], map: "ProductSetorImpressao_setorId_fkey")
 }
 
 model Categoria {
@@ -296,8 +289,6 @@ model SaleItem {
   variacaoTipo       String?     @db.VarChar(50)
   preparedBy         Employee?   @relation("SaleItemPreparedBy", fields: [preparedById], references: [id])
   product            Product?    @relation(fields: [productId], references: [id])
-  tamanhoId          Int?
-  tamanho            ProductSize? @relation(fields: [tamanhoId], references: [id])
   sale               Sale        @relation(fields: [saleId], references: [id], onDelete: Cascade)
 
   @@index([preparedById], map: "SaleItem_preparedById_fkey")

@@ -28,16 +28,12 @@ const mapProduct = (p) => {
     tipoId: p.tipoId || null,
     groupId: p.groupId || null,
     unidadeMedidaId: p.unidadeMedidaId || null,
+    unidadeMedidaId: p.unidadeMedidaId || null,
     dataInclusao: p.dataInclusao,
-    possuiVariacaoTamanho: !!p.possuiVariacaoTamanho,
-    permiteMeioAMeio: !!p.permiteMeioAMeio,
-    regraVariacao: p.regraVariacao || 'mais_caro',
-    precoFixoVariacao: p.precoFixoVariacao ? Number(p.precoFixoVariacao) : null,
-    sizes: Array.isArray(p.sizes) ? p.sizes.map(s => ({
-      id: s.id,
-      nome: s.nome,
-      preco: Number(s.preco),
-      ativo: s.ativo
+    temTamanhos: !!p.temTamanhos,
+    tamanhos: Array.isArray(p.tamanhos) ? p.tamanhos.map(t => ({
+      ...t,
+      preco: Number(t.preco)
     })) : []
   };
 };
@@ -48,12 +44,7 @@ router.get("/", async (req, res) => {
     const prisma = getActivePrisma();
     const produtos = await prisma.product.findMany({ 
       where: { ativo: true }, 
-      include: { 
-        sizes: {
-          where: { ativo: true },
-          orderBy: { preco: 'asc' }
-        } 
-      },
+      include: { tamanhos: true },
       orderBy: { dataInclusao: 'desc' } 
     });
     res.json(produtos.map(mapProduct));
@@ -67,7 +58,7 @@ router.get("/", async (req, res) => {
 router.post("/create", async (req, res) => {
   try {
     const prisma = getActivePrisma();
-    const { nome, descricao, preco, precoVenda, precoCusto, categoria, tipo, grupo, unidade, estoque, quantidade, estoqueMinimo, ativo, dadosFiscais, imagem, tempoPreparoMinutos, disponivel, temVariacao, possuiVariacaoTamanho, permiteMeioAMeio, regraVariacao, precoFixoVariacao, categoriaId, tipoId, unidadeMedidaId, groupId, setoresImpressaoIds } = req.body;
+    const { nome, descricao, preco, precoVenda, precoCusto, categoria, tipo, grupo, unidade, estoque, quantidade, estoqueMinimo, ativo, dadosFiscais, imagem, tempoPreparoMinutos, disponivel, temVariacao, categoriaId, tipoId, unidadeMedidaId, groupId, setoresImpressaoIds, temTamanhos, tamanhos } = req.body;
 
     const pv = precoVenda ?? preco ?? 0;
     const pc = precoCusto ?? 0;
@@ -107,13 +98,26 @@ router.post("/create", async (req, res) => {
         tempoPreparoMinutos: tempoPreparoMinutos ?? 0,
         disponivel: disponivel ?? true,
         temVariacao: temVariacao !== undefined ? !!temVariacao : false,
-        temVariacao: temVariacao !== undefined ? !!temVariacao : false,
-        possuiVariacaoTamanho: possuiVariacaoTamanho !== undefined ? !!possuiVariacaoTamanho : false,
-        permiteMeioAMeio: permiteMeioAMeio !== undefined ? !!permiteMeioAMeio : false,
-        regraVariacao: regraVariacao || 'mais_caro',
-        precoFixoVariacao: precoFixoVariacao ? String(Number(precoFixoVariacao).toFixed(2)) : null
+        temTamanhos: temTamanhos !== undefined ? !!temTamanhos : false
       }
     });
+
+    try {
+      if (Array.isArray(tamanhos) && tamanhos.length > 0) {
+        console.log(`[DEBUG] Inserindo tamanhos para produto ${novoProduto.id}:`, tamanhos);
+        const sizesData = tamanhos.map(t => ({
+          productId: novoProduto.id,
+          nome: t.nome,
+          preco: t.preco,
+          ativo: true
+        }));
+        await prisma.productSize.createMany({
+            data: sizesData
+        });
+      }
+    } catch (err) {
+      console.error('[ERROR] Falha ao inserir tamanhos na criação:', err);
+    }
 
     try {
       const ids = Array.isArray(setoresImpressaoIds) ? setoresImpressaoIds.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0) : [];
@@ -138,9 +142,11 @@ router.post("/create", async (req, res) => {
 
 // Rota para listar todos os produtos
 router.get("/list", async (req, res) => {
+  console.log('[DEBUG-PROD] GET /list called');
   try {
     const prisma = getActivePrisma();
     const { categoriaId, categoria, tipoId, tipo, groupId, grupo, unidade, setorId, setorNome } = req.query;
+    console.log('[DEBUG-PROD] Query params:', req.query);
     const where = { ativo: true };
     const catId = Number(categoriaId);
     const tipId = Number(tipoId);
@@ -173,27 +179,18 @@ router.get("/list", async (req, res) => {
       const w = idsFilter ? { ...where, id: { in: idsFilter } } : where;
       products = await prisma.product.findMany({ 
         where: w, 
-        include: { 
-          sizes: {
-            where: { ativo: true },
-            orderBy: { preco: 'asc' }
-          } // Modified to filter inactive sizes
-        }, 
+        include: { tamanhos: true },
         orderBy: { dataInclusao: 'desc' } 
       });
     } catch (e) {
       const w = idsFilter ? { ...where, id: { in: idsFilter } } : where;
       products = await prisma.product.findMany({ 
         where: w, 
-        include: { 
-          sizes: {
-            where: { ativo: true },
-            orderBy: { preco: 'asc' }
-          } // Modified to filter inactive sizes
-        }, 
+        include: { tamanhos: true },
         orderBy: { id: 'desc' } 
       });
     }
+    console.log(`[DEBUG-PROD] Found ${products.length} products`);
     res.json(products.map(mapProduct));
   } catch (error) {
     console.error('Erro ao listar produtos:', error?.message || error);
@@ -326,12 +323,7 @@ router.get("/:id", async (req, res) => {
     }
     const product = await prisma.product.findUnique({ 
       where: { id },
-      include: { 
-        sizes: {
-          where: { ativo: true },
-          orderBy: { preco: 'asc' }
-        } 
-      }
+      include: { tamanhos: true }
     });
     if (!product) {
       return res.status(404).json({ error: "Produto não encontrado" });
@@ -361,7 +353,7 @@ router.put("/update/:id", async (req, res) => {
       return res.status(400).json({ error: "ID inválido" });
     }
 
-    const { nome, descricao, precoCusto, precoVenda, categoria, tipo, grupo, unidade, ativo, dadosFiscais, quantidade, imagem, tempoPreparoMinutos, disponivel, temVariacao, possuiVariacaoTamanho, permiteMeioAMeio, regraVariacao, precoFixoVariacao, preco, estoque, categoriaId, tipoId, unidadeMedidaId, groupId, setoresImpressaoIds } = req.body;
+    const { nome, descricao, precoCusto, precoVenda, categoria, tipo, grupo, unidade, ativo, dadosFiscais, quantidade, imagem, tempoPreparoMinutos, disponivel, temVariacao, preco, estoque, categoriaId, tipoId, unidadeMedidaId, groupId, setoresImpressaoIds, temTamanhos, tamanhos } = req.body;
     
     const updateData = {
       nome,
@@ -379,10 +371,7 @@ router.put("/update/:id", async (req, res) => {
       tempoPreparoMinutos,
       disponivel,
       temVariacao: temVariacao !== undefined ? !!temVariacao : undefined,
-      possuiVariacaoTamanho: possuiVariacaoTamanho !== undefined ? !!possuiVariacaoTamanho : undefined,
-      permiteMeioAMeio: permiteMeioAMeio !== undefined ? !!permiteMeioAMeio : undefined,
-      regraVariacao: regraVariacao || undefined,
-      precoFixoVariacao: precoFixoVariacao !== undefined ? (precoFixoVariacao ? String(Number(precoFixoVariacao).toFixed(2)) : null) : undefined,
+      temTamanhos: temTamanhos !== undefined ? !!temTamanhos : undefined,
       categoriaId: categoriaId !== undefined ? (Number.isInteger(Number(categoriaId)) ? Number(categoriaId) : undefined) : undefined,
       tipoId: tipoId !== undefined ? (Number.isInteger(Number(tipoId)) ? Number(tipoId) : undefined) : undefined,
       groupId: groupId !== undefined ? (Number.isInteger(Number(groupId)) ? Number(groupId) : undefined) : undefined,
@@ -394,10 +383,31 @@ router.put("/update/:id", async (req, res) => {
 
     const updatedProduct = await prisma.product.update({ where: { id }, data: updateData });
 
+    // Atualização de tamanhos com transação
+    if (Array.isArray(tamanhos)) {
+      console.log(`[DEBUG] Atualizando tamanhos do produto ${id}.`, tamanhos);
+      try {
+        await prisma.$transaction(async (tx) => {
+          // Remover tamanhos antigos
+          await tx.productSize.deleteMany({ where: { productId: id } });
+          
+          // Inserir novos
+          if (tamanhos.length > 0) {
+            const sizesData = tamanhos.map(t => ({
+              productId: id,
+              nome: t.nome,
+              preco: t.preco,
+              ativo: true
+            }));
+            await tx.productSize.createMany({ data: sizesData });
+          }
+        });
+      } catch (err) {
+        console.error(`[ERROR] Falha ao atualizar tamanhos do produto ${id}:`, err);
+      }
+    }
+
     // Atualização de setores com transação para evitar perda de dados
-    // Atualização de setores com transação para evitar perda de dados e suportar limpeza
-    // Atualização de setores com transação para evitar perda de dados e suportar limpeza
-    // Atualização de setores com transação para evitar perda de dados e suportar limpeza
     if (Array.isArray(setoresImpressaoIds)) {
       const ids = setoresImpressaoIds.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0);
       
@@ -520,71 +530,6 @@ router.delete("/:id", async (req, res) => {
 });
 
 export default router;
-
-// --- Rotas de Tamanhos (Workflow) ---
-
-// GET /produtos/:id/tamanhos
-router.get("/:id/tamanhos", async (req, res) => {
-  try {
-    const prisma = getActivePrisma();
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: "ID inválido" });
-    
-    const tamanhos = await prisma.productSize.findMany({
-      where: { produtoId: id, ativo: true },
-      orderBy: { preco: 'asc' }
-    });
-    res.json(tamanhos.map(t => ({...t, preco: Number(t.preco)})));
-  } catch (error) {
-    console.error("Erro ao buscar tamanhos:", error);
-    res.status(500).json({ error: "Erro ao buscar tamanhos" });
-  }
-});
-
-// POST /produtos/:id/tamanhos
-router.post("/:id/tamanhos", async (req, res) => {
-  try {
-    const prisma = getActivePrisma();
-    const id = Number(req.params.id);
-    const { nome, preco } = req.body;
-    
-    if (!Number.isInteger(id)) return res.status(400).json({ error: "ID de produto inválido" });
-    if (!nome || !preco) return res.status(400).json({ error: "Nome e preço são obrigatórios" });
-
-    const novoTamanho = await prisma.productSize.create({
-      data: {
-        produtoId: id,
-        nome,
-        preco: Number(preco)
-      }
-    });
-
-    res.status(201).json(novoTamanho);
-  } catch (error) {
-    console.error("Erro ao criar tamanho:", error);
-    res.status(500).json({ error: "Erro ao criar tamanho" });
-  }
-});
-
-// DELETE /produto-tamanhos/:id (Desativar)
-router.delete("/tamanhos/:id", async (req, res) => {
-  try {
-    const prisma = getActivePrisma();
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: "ID inválido" });
-
-    await prisma.productSize.update({
-      where: { id },
-      data: { ativo: false }
-    });
-
-    res.json({ message: "Tamanho desativado com sucesso" });
-  } catch (error) {
-    console.error("Erro ao remover tamanho:", error);
-    res.status(500).json({ error: "Erro ao remover tamanho" });
-  }
-});
-
 router.get('/setores/used', async (req, res) => {
   try {
     const prisma = getActivePrisma();

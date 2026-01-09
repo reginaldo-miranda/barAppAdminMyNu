@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { authService, clearApiBaseUrl, getCurrentBaseUrl, testApiConnection } from '../services/api';
+import { authService, systemService, clearApiBaseUrl, getCurrentBaseUrl, testApiConnection } from '../services/api';
 
 // Interface para o contexto de autenticação
 const defaultAuthContext = {
@@ -148,15 +148,17 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+
+
   const logout = async () => {
     try {
       setLoading(true);
       
-      // Tentar fazer logout no servidor
+      // Tentar fazer shutdown/logout no servidor
       try {
-        await authService.logout();
+        await systemService.shutdown();
       } catch (error) {
-        console.warn('Erro ao fazer logout no servidor:', error);
+        console.warn('Erro ao encerrar servidor:', error);
       }
       
       // Limpar dados locais

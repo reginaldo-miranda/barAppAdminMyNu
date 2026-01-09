@@ -18,15 +18,16 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { saleService, mesaService, comandaService, getWsUrl, authService, API_URL } from '../src/services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../src/services/storage';
-import { useAuth } from '../src/contexts/AuthContext';
 import AddProductToTable from '../src/components/AddProductToTable';
 import ScreenIdentifier from '../src/components/ScreenIdentifier';
-import { Sale, CartItem, PaymentMethod, Product } from '../src/types/index';
 import SaleItemsModal from '../src/components/SaleItemsModal';
 
 import VariationSelectorModal from '../src/components/VariationSelectorModal';
-import PaymentSplitModal from '../src/components/PaymentSplitModal';
+import SizeSelectorModal from '../src/components/SizeSelectorModal';
+import { Product, CartItem, Sale, PaymentMethod, ProductSize } from '../src/types/index';
+import { useAuth } from '../src/contexts/AuthContext';
 import { events } from '../src/utils/eventBus';
+import PaymentSplitModal from '../src/components/PaymentSplitModal';
 
 export default function SaleScreen() {
   const { tipo, mesaId, vendaId, viewMode } = useLocalSearchParams();
@@ -46,12 +47,16 @@ export default function SaleScreen() {
   const isPhone = Dimensions.get('window').width < 768;
   const [initialItemsModalShown, setInitialItemsModalShown] = useState(false);
   const latestReqRef = useRef<Map<string, number>>(new Map());
+  // Estados para variação
   const [variationVisible, setVariationVisible] = useState(false);
-
   const [variationProduct, setVariationProduct] = useState<Product | null>(null);
+
+  // Estados para tamanhos
+  const [sizeModalVisible, setSizeModalVisible] = useState(false);
+  const [sizeProduct, setSizeProduct] = useState<Product | null>(null);
+  const [selectedSize, setSelectedSize] = useState<ProductSize | null>(null);
+
   const [splitModalVisible, setSplitModalVisible] = useState(false);
-  const [sizeSelectorVisible, setSizeSelectorVisible] = useState(false);
-  const [selectedProductForSize, setSelectedProductForSize] = useState<Product | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -354,18 +359,18 @@ export default function SaleScreen() {
     }
 
     try {
-      if ((product as any)?.possuiVariacaoTamanho) {
-        if (!product.sizes || product.sizes.length === 0) {
-           Alert.alert('Aviso', 'Produto requer tamanho, mas nenhum foi cadastrado.');
-           return;
-        }
-        setSelectedProductForSize(product);
-        setSizeSelectorVisible(true);
+      // Check for size selection first
+      if ((product as any)?.temTamanhos) {
+        setSizeProduct(product);
+        setSizeModalVisible(true);
+        setSelectedSize(null);
         return;
       }
+
       if ((product as any)?.temVariacao) {
         setVariationProduct(product);
         setVariationVisible(true);
+        setSelectedSize(null);
         return;
       }
       // Adiciona o item no backend
@@ -461,7 +466,47 @@ export default function SaleScreen() {
     }
   };
 
-  const [selectedSizeForVariation, setSelectedSizeForVariation] = useState<any>(null);
+  const handleSizeSelect = (size: ProductSize) => {
+    setSizeModalVisible(false);
+    setSelectedSize(size);
+
+    if (!sizeProduct) return;
+
+    if ((sizeProduct as any)?.temVariacao) {
+      setVariationProduct(sizeProduct);
+      setVariationVisible(true);
+    } else {
+      // Add directly with size
+      addItemWithSize(sizeProduct, size);
+    }
+  };
+
+  const addItemWithSize = async (product: Product, size: ProductSize) => {
+    if (!sale) return;
+    try {
+      const itemData: any = {
+        produtoId: parseInt(String(product._id || (product as any).id), 10),
+        quantidade: 1,
+        tamanho: size.nome // Pass size name to API
+      };
+      
+      const clientMode = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
+      if (String(clientMode).toLowerCase() === 'tablet') {
+        itemData.origem = 'tablet';
+      }
+
+      const response = await saleService.addItem(sale._id, itemData);
+      setSale(response.data);
+      setCart(response.data.itens || []);
+      Alert.alert('Sucesso', `${product.nome} (${size.nome}) adicionado!`);
+    } catch (e) {
+      console.error(e);
+      Alert.alert('Erro', 'Falha ao adicionar produto com tamanho');
+    } finally {
+      setSizeProduct(null);
+      setSelectedSize(null);
+    }
+  };
 
   const confirmVariation = async (payload: any) => {
     try {
@@ -470,66 +515,19 @@ export default function SaleScreen() {
         produtoId: parseInt(String((variationProduct as any)?._id ?? (variationProduct as any)?.id ?? 0), 10),
         quantidade: 1,
         variacao: payload,
+        tamanho: selectedSize?.nome // Include size if selected
       };
-      
-      // Se tiver tamanho selecionado previamente, inclui no payload
-      if (selectedSizeForVariation) {
-        itemData.tamanhoId = selectedSizeForVariation.id;
-      }
-
       const clientMode = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
       if (String(clientMode).toLowerCase() === 'tablet') itemData.origem = 'tablet';
       const response = await saleService.addItem(sale._id, itemData);
       setSale(response.data);
       setCart(response.data.itens || []);
-      
-      const sizeMsg = selectedSizeForVariation ? ` (${selectedSizeForVariation.nome})` : '';
-      Alert.alert('Sucesso', `${variationProduct.nome}${sizeMsg} foi adicionado com variação!`);
-    } catch (e: any) {
-      Alert.alert('Erro', e?.response?.data?.error || 'Não foi possível adicionar com variação');
+      Alert.alert('Sucesso', `${variationProduct.nome} foi adicionado com variação!`);
+    } catch (e) {
+      Alert.alert('Erro', 'Não foi possível adicionar com variação');
     } finally {
       setVariationVisible(false);
       setVariationProduct(null);
-      setSelectedSizeForVariation(null);
-    }
-  };
-
-  const handleSizeSelected = async (size: any) => {
-    if (!sale || !selectedProductForSize) return;
-    
-    // VERIFICAÇÃO CRÍTICA: Se o produto TAMBÉM tem variação (meio a meio), 
-    // não adiciona direto! Abre o modal de variação primeiro.
-    if ((selectedProductForSize as any)?.temVariacao) {
-      console.log('Product has size AND variation. Chaining to Variation Modal...');
-      setSelectedSizeForVariation(size);
-      setVariationProduct(selectedProductForSize);
-      setVariationVisible(true);
-      
-      // Fecha o modal de tamanho e limpa o produto de seleção de tamanho
-      setSizeSelectorVisible(false);
-      setSelectedProductForSize(null);
-      return;
-    }
-
-    const itemData: any = {
-      produtoId: parseInt(String(selectedProductForSize._id || (selectedProductForSize as any).id), 10),
-      quantidade: 1,
-      tamanhoId: size.id
-    };
-    const clientMode = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
-    if (String(clientMode).toLowerCase() === 'tablet') itemData.origem = 'tablet';
-
-    try {
-       const response = await saleService.addItem(sale._id, itemData);
-       setSale(response.data);
-       setCart(response.data.itens || []);
-       Alert.alert('Sucesso', `${selectedProductForSize.nome} (${size.nome}) adicionado!`);
-    } catch (error: any) {
-       console.error('Erro ao adicionar tamanho:', error);
-       Alert.alert('Erro', error?.response?.data?.error || 'Falha ao adicionar produto.');
-    } finally {
-       setSizeSelectorVisible(false);
-       setSelectedProductForSize(null);
     }
   };
 
@@ -539,6 +537,7 @@ export default function SaleScreen() {
       const itemData: any = {
         produtoId: parseInt(String((variationProduct as any)?._id ?? (variationProduct as any)?.id ?? 0), 10),
         quantidade: 1,
+        tamanho: selectedSize?.nome // Include size if selected
       };
       const clientMode = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_MODE);
       if (String(clientMode).toLowerCase() === 'tablet') itemData.origem = 'tablet';
@@ -971,10 +970,17 @@ export default function SaleScreen() {
       <VariationSelectorModal
         visible={variationVisible}
         product={variationProduct as any}
-        onClose={() => { setVariationVisible(false); setVariationProduct(null); setSelectedSizeForVariation(null); }}
+        onClose={() => { setVariationVisible(false); setVariationProduct(null); }}
         onConfirm={confirmVariation}
         onConfirmWhole={confirmVariationWhole}
-        selectedSize={selectedSizeForVariation}
+        selectedSize={selectedSize}
+      />
+      
+      <SizeSelectorModal
+        visible={sizeModalVisible}
+        product={sizeProduct}
+        onClose={() => setSizeModalVisible(false)}
+        onSelectSize={handleSizeSelect}
       />
 
       {!isViewMode && cart.length > 0 && (
@@ -1119,35 +1125,6 @@ export default function SaleScreen() {
            }
         }}
       />
-      <Modal visible={sizeSelectorVisible} transparent animationType="slide" onRequestClose={() => setSizeSelectorVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { maxHeight: '80%' }]}>
-            <Text style={styles.modalTitle}>Selecione o Tamanho</Text>
-            <Text style={[styles.modalSubtitle, { marginBottom: 10 }]}>{selectedProductForSize?.nome}</Text>
-            
-            <View>
-              {selectedProductForSize?.sizes?.map((size) => (
-                <TouchableOpacity 
-                   key={size.id} 
-                   style={[styles.paymentOption, { justifyContent: 'space-between' }]}
-                   onPress={() => handleSizeSelected(size)}
-                >
-                   <Text style={{ fontSize: 16 }}>{size.nome}</Text>
-                   <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#4CAF50' }}>
-                     R$ {Number(size.preco).toFixed(2)}
-                   </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setSizeSelectorVisible(false)}>
-                <Text style={styles.cancelButtonText}>Cancelar</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }

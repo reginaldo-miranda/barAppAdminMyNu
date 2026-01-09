@@ -3,7 +3,8 @@ import { Modal, View, Text, TouchableOpacity, StyleSheet, FlatList, ActivityIndi
 import { Ionicons } from '@expo/vector-icons';
 import { variationTypeService, productService } from '../services/api';
 import { computeVariationPrice } from '../utils/variation';
-import { Product, VariationType } from '../types/index';
+
+import { Product, VariationType, ProductSize } from '../types/index';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -12,8 +13,9 @@ interface VariationSelectorModalProps {
   product: Product | null;
   onClose: () => void;
   onConfirm: (payload: { tipoId?: number; tipoNome?: string; regraPreco?: 'mais_caro'|'media'|'fixo'; maxOpcoes?: number; opcoes: Array<{ productId: number }>; precoFixo?: number }) => void;
+
   onConfirmWhole?: () => void;
-  selectedSize?: { id: number; nome: string }; // Add selectedSize prop
+  selectedSize?: ProductSize | null;
 }
 
 export default function VariationSelectorModal({ visible, product, onClose, onConfirm, onConfirmWhole, selectedSize }: VariationSelectorModalProps) {
@@ -80,7 +82,7 @@ export default function VariationSelectorModal({ visible, product, onClose, onCo
         categoriaId: p?.categoriaId ?? undefined,
         ativo: !!p?.ativo,
         disponivel: !!p?.disponivel,
-        sizes: Array.isArray(p?.sizes) ? p.sizes : [],
+        tamanhos: p?.tamanhos || [], 
       }));
       setOptionsProducts(normalized as any);
     } catch (e) {
@@ -110,28 +112,15 @@ export default function VariationSelectorModal({ visible, product, onClose, onCo
 
   const precoCalculado = useMemo(() => {
     try {
-      // Determine effective rule
-      let rule = String(selectedTipo?.regraPreco || 'mais_caro') as 'mais_caro'|'media'|'fixo';
-      let fixedPrice = selectedTipo?.precoFixo ?? undefined;
-      
-      if ((product as any)?.permiteMeioAMeio && (product as any)?.regraVariacao) {
-         rule = String((product as any).regraVariacao) as any;
-         if (rule === 'fixo' && (product as any)?.precoFixoVariacao) {
-           fixedPrice = Number((product as any).precoFixoVariacao);
-         }
-      }
-
+      const rule = String(selectedTipo?.regraPreco || 'mais_caro') as 'mais_caro'|'media'|'fixo';
       const chosen = optionsProducts.filter((p) => selectedOpcoes.includes(parseInt(String((p as any)?._id ?? (p as any)?.id ?? 0), 10)));
-      
-      // Calculate prices for chosen options (respecting size)
       const precos = chosen.map((p) => {
-         if (selectedSize && Array.isArray((p as any).sizes)) {
-            const match = (p as any).sizes.find((s: any) => s.nome === selectedSize.nome);
-            if (match) return Number(match.preco);
-         }
-         return Number(p.precoVenda || 0);
+        if (selectedSize && Array.isArray(p.tamanhos)) {
+          const match = p.tamanhos.find(t => t.nome === selectedSize.nome);
+          if (match) return Number(match.preco);
+        }
+        return Number(p.precoVenda || 0);
       });
-
       const max = Number(selectedTipo?.maxOpcoes || 1);
       const frac = precos.map((_, idx) => {
         const p = chosen[idx];
@@ -140,10 +129,16 @@ export default function VariationSelectorModal({ visible, product, onClose, onCo
         if (Number.isFinite(f) && f > 0) return f;
         return max > 1 ? (1 / max) : 1;
       });
-      
-      return computeVariationPrice(rule, Number(product?.precoVenda || 0), precos, fixedPrice, frac);
+      // Base price needs to consider selected size too if it's the base product
+      let basePrice = Number(product?.precoVenda || 0);
+      if (selectedSize) {
+         // Pass explicit size cost as base? Or use product's size price.
+         // Usually `product` here is the one triggered from sale screen.
+         basePrice = Number(selectedSize.preco);
+      }
+      return computeVariationPrice(rule, basePrice, precos, selectedTipo?.precoFixo ?? undefined, frac);
     } catch {
-      return Number(product?.precoVenda || 0);
+      return Number(selectedSize ? selectedSize.preco : (product?.precoVenda || 0));
     }
   }, [selectedTipo, selectedOpcoes, optionsProducts, product, fractionsMap, selectedSize]);
 
@@ -209,6 +204,14 @@ export default function VariationSelectorModal({ visible, product, onClose, onCo
     const checked = selectedOpcoes.includes(id);
     const max = Number(selectedTipo?.maxOpcoes || 1);
     const frac = fractionsMap[id] ?? (max > 1 ? (1 / max) : 1);
+    
+    // Determine displayed price for this option
+    let displayPrice = Number(item.precoVenda || 0);
+    if (selectedSize && Array.isArray(item.tamanhos)) {
+      const match = item.tamanhos.find(t => t.nome === selectedSize.nome);
+      if (match) displayPrice = Number(match.preco);
+    }
+
     return (
       <TouchableOpacity style={[styles.opcaoRow, checked && styles.opcaoRowSelected]} onPress={() => toggleOpcao(id)}>
         <View style={styles.opcaoLeft}>
@@ -216,7 +219,7 @@ export default function VariationSelectorModal({ visible, product, onClose, onCo
           {!!item.descricao && <Text style={styles.opcaoDesc} numberOfLines={2}>{item.descricao}</Text>}
         </View>
         <View style={styles.opcaoRight}>
-          <Text style={styles.opcaoPreco}>R$ {Number(item.precoVenda || 0).toFixed(2)}</Text>
+          <Text style={styles.opcaoPreco}>R$ {displayPrice.toFixed(2)}</Text>
           {checked && (
             <View style={styles.fracSelector}>
               {max === 2 ? (

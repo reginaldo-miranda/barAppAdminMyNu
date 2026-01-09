@@ -419,7 +419,6 @@ router.get('/:id', async (req, res) => {
     const prisma = getActivePrisma();
     const id = Number(req.params.id);
     const { produtoId, quantidade } = req.body;
-    const tamanhoId = req.body?.tamanhoId ? Number(req.body.tamanhoId) : null;
     const variacao = req.body?.variacao || null;
     const origemRaw = (req.body?.origem || req.headers['x-client-mode'] || '').toString().toLowerCase();
     const origem = origemRaw === 'tablet' ? 'tablet' : 'default';
@@ -441,35 +440,44 @@ router.get('/:id', async (req, res) => {
     if (!Number.isInteger(prodId) || prodId <= 0) {
       return res.status(400).json({ error: 'Produto inválido' });
     }
-    const produto = await prisma.product.findUnique({ where: { id: prodId } });
+    const produto = await prisma.product.findUnique({ 
+      where: { id: prodId },
+      include: { tamanhos: true } 
+    });
     if (!produto) {
       return res.status(404).json({ error: 'Produto não encontrado' });
+    }
+
+    // Lógica para tamanho (Size)
+    const tamanhoName = req.body?.tamanho || null;
+    let precoBase = Number(produto.precoVenda);
+    let nomeFinal = produto.nome;
+
+    if (tamanhoName) {
+      const sizeObj = Array.isArray(produto.tamanhos) ? produto.tamanhos.find(t => t.nome === tamanhoName) : null;
+      if (sizeObj) {
+        precoBase = Number(sizeObj.preco);
+        nomeFinal = `${produto.nome} (${tamanhoName})`;
+      } else {
+        // Se enviou tamanho mas não achou, pode ser erro ou fallback. Vamos logar e seguir fallback?
+        // Melhor retornar erro se o tamanho for inválido explícito
+        return res.status(400).json({ error: `Tamanho '${tamanhoName}' inválido para este produto` });
+      }
     }
     if (!produto.ativo) {
       return res.status(400).json({ error: 'Produto inativo' });
     }
 
-    // Validar tamanho se fornecido
-    let tamanho = null;
-    if (tamanhoId) {
-       tamanho = await prisma.productSize.findUnique({ where: { id: tamanhoId } });
-       if (!tamanho) return res.status(400).json({ error: 'Tamanho não encontrado' });
-       if (tamanho.produtoId !== prodId) return res.status(400).json({ error: 'Tamanho não pertence ao produto' });
-       // if (!tamanho.ativo) return res.status(400).json({ error: 'Tamanho inativo' }); // Opcional
-    }
-
-    // Busca item pendente idêntico (mesmo produto e SEM variação e MESMO tamanho)
+    // Busca item pendente idêntico (mesmo produto e SEM variação)
     const itemExistente = Array.isArray(venda.itens)
       ? venda.itens.find((i) => {
           const sameProduct = Number(i.productId) === prodId;
           const isPendente = i.status === 'pendente';
           // Garante que o item existente não tenha variação (nem tipo, nem opções)
+          // Isso evita mesclar um produto simples com um que já tem variação
           const hasNoVariation = !i.variacaoTipo && (!i.variacaoOpcoes || (Array.isArray(i.variacaoOpcoes) && i.variacaoOpcoes.length === 0));
           
-          // Verifica tamanho
-          const sameSize = tamanhoId ? (i.tamanhoId === tamanhoId) : (i.tamanhoId === null);
-
-          return sameProduct && isPendente && hasNoVariation && sameSize;
+          return sameProduct && isPendente && hasNoVariation;
       })
       : null;
       
@@ -477,22 +485,16 @@ router.get('/:id', async (req, res) => {
     const shouldMerge = !variacao && itemExistente;
     if (shouldMerge) {
       const novaQtd = Number(itemExistente.quantidade || 0) + Number(quantidade || 1);
-      // Recalcula subtotal com base no PREÇO ORIGINAL DO ITEM (ou atualiza se quiser)
-      // Se tiver tamanho, o precoUnitario do item já deve estar correto.
       await prisma.saleItem.update({
         where: { id: itemExistente.id },
         data: {
           quantidade: novaQtd,
-          subtotal: String((Number(novaQtd) * Number(itemExistente.precoUnitario)).toFixed(2))
+          subtotal: String((Number(novaQtd) * Number(itemExistente.precoUnitario ?? produto.precoVenda)).toFixed(2))
         }
       });
     } else {
-      let precoUnit = tamanho ? tamanho.preco : produto.precoVenda;
-      let nomeProdutoFinal = produto.nome;
-      if (tamanho) {
-        nomeProdutoFinal = `${produto.nome} (${tamanho.nome})`;
-      }
-
+      // ... create new item code
+      let precoUnit = precoBase;
       let variacaoTipo = null;
       let variacaoRegra = null;
       let variacaoOpcoes = null;
@@ -515,7 +517,7 @@ router.get('/:id', async (req, res) => {
           }
           const prods = await prisma.product.findMany({ 
             where: { id: { in: opcoesIds }, ativo: true },
-            include: { sizes: { where: { ativo: true } } }
+            include: { tamanhos: true }
           });
           if (prods.length !== opcoesIds.length) {
             return res.status(400).json({ error: 'Opções de variação inválidas' });
@@ -531,51 +533,37 @@ router.get('/:id', async (req, res) => {
           }
           
           const precos = prods.map((p) => {
-             // Se tiver tamanho selecionado no produto principal, buscar tamanho correspondente (pelo nome) no produto da variação
-             if (tamanho && Array.isArray(p.sizes)) {
-               const matchSize = p.sizes.find(s => s.nome === tamanho.nome);
-               if (matchSize) return Number(matchSize.preco);
+             if (tamanhoName && Array.isArray(p.tamanhos)) {
+               const s = p.tamanhos.find(t => t.nome === tamanhoName);
+               if (s) return Number(s.preco);
              }
              return Number(p.precoVenda);
           });
-          
           const fractions = opcoesArr.map((o) => Number(o?.fracao || 0)).filter((f) => Number.isFinite(f) && f > 0);
-          
-          // Definir regra: Se produto permitir meio a meio, usa a regra dele. Caso contrário, usa do tipo de variação.
-          let regra = String(vt?.regraPreco || variacao?.regraPreco || 'mais_caro');
-          if (produto.permiteMeioAMeio && produto.regraVariacao) {
-             regra = String(produto.regraVariacao);
-          }
-
+          const regra = String(vt?.regraPreco || variacao?.regraPreco || 'mais_caro');
           if (regra === 'mais_caro') {
             precoUnit = Math.max(...precos);
           } else if (regra === 'media') {
             if (fractions.length === precos.length && fractions.length > 0) {
               const wsum = precos.reduce((acc, n, i) => acc + n * fractions[i], 0);
               const fsum = fractions.reduce((acc, f) => acc + f, 0);
-              precoUnit = fsum > 0 ? (wsum / fsum) : produto.precoVenda;
+              precoUnit = fsum > 0 ? (wsum / fsum) : precoBase;
             } else {
               const sum = precos.reduce((acc, n) => acc + n, 0);
-              precoUnit = precos.length > 0 ? (sum / precos.length) : produto.precoVenda;
+              precoUnit = precos.length > 0 ? (sum / precos.length) : precoBase;
             }
           } else if (regra === 'fixo') {
-            // Prioridade para preco fixo do produto se a regra vier dele
-            let pf = 0;
-            if (produto.permiteMeioAMeio && produto.regraVariacao === 'fixo') {
-               pf = Number(produto.precoFixoVariacao || 0);
-            } else {
-               pf = vt?.precoFixo !== null && vt?.precoFixo !== undefined ? Number(vt.precoFixo) : Number(variacao?.precoFixo || 0);
-            }
-            precoUnit = pf > 0 ? pf : produto.precoVenda;
+            const pf = vt?.precoFixo !== null && vt?.precoFixo !== undefined ? Number(vt.precoFixo) : Number(variacao?.precoFixo || 0);
+            precoUnit = pf > 0 ? pf : precoBase;
           }
           variacaoTipo = vt ? vt.nome : (tipoNome || null);
           variacaoRegra = vt ? vt.regraPreco : regra;
-          variacaoOpcoes = prods.map((p, idx) => ({ productId: p.id, nome: p.nome, preco: Number(p.precoVenda), fracao: fractions[idx] || undefined }));
+          variacaoOpcoes = prods.map((p, idx) => ({ productId: p.id, nome: p.nome, preco: precos[idx], fracao: fractions[idx] || undefined }));
           
           // Construir nome do produto concatenado (Ex: Meio Calabresa / Meio Frango)
           if (variacaoOpcoes.length > 1) {
             const nomesConcatenados = variacaoOpcoes.map(o => `meio ${o.nome}`).join(' / ');
-            produto.nome = nomesConcatenados;
+            nomeFinal = nomesConcatenados + (tamanhoName ? ` (${tamanhoName})` : '');
           }
         } catch (e) {
           console.error('Erro ao processar variação no backend:', e);
@@ -587,7 +575,7 @@ router.get('/:id', async (req, res) => {
         data: {
           saleId: venda.id,
           productId: prodId,
-          nomeProduto: nomeProdutoFinal,
+          nomeProduto: nomeFinal,
           quantidade: qty,
           precoUnitario: String(Number(precoUnit).toFixed(2)),
           subtotal: String(Number(qty * precoUnit).toFixed(2)),
@@ -596,8 +584,7 @@ router.get('/:id', async (req, res) => {
           origem,
           variacaoTipo: variacaoTipo || undefined,
           variacaoRegraPreco: variacaoRegra || undefined,
-          variacaoOpcoes: variacaoOpcoes || undefined,
-          tamanhoId: tamanho ? tamanho.id : undefined,
+          variacaoOpcoes: variacaoOpcoes || undefined
         },
       });
     }

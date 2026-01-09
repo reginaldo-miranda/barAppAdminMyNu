@@ -9,9 +9,16 @@ import {
   ActivityIndicator,
   Alert
 } from 'react-native';
-import { SafeIcon } from '../../components/SafeIcon';
+import { Ionicons } from '@expo/vector-icons';
 import { authService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+
+interface User {
+  _id?: string;
+  nome?: string;
+  email?: string;
+  tipo?: string;
+}
 
 interface Props {
   visible: boolean;
@@ -22,7 +29,7 @@ interface Props {
 }
 
 export default function PasswordConfirmModal({ visible, title = 'Confirmar Ação', message = 'Digite sua senha para confirmar:', onConfirm, onCancel }: Props) {
-  const { user } = useAuth();
+  const { user } = useAuth() as { user: User | null };
   const [senha, setSenha] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -67,7 +74,7 @@ export default function PasswordConfirmModal({ visible, title = 'Confirmar Açã
       <View style={styles.overlay}>
         <View style={styles.container}>
           <View style={styles.header}>
-            <SafeIcon name="lock-closed" size={24} color="#F44336" fallbackText="🔒" />
+            <Ionicons name="lock-closed" size={24} color="#F44336" />
             <Text style={styles.title}>{title}</Text>
           </View>
 

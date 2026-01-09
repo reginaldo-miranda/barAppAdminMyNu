@@ -45,8 +45,15 @@ export interface Product {
   unidade?: string;
   unidadeMedidaId?: number;
   temVariacao?: boolean;
-  possuiVariacaoTamanho?: boolean;
-  sizes?: { id: number; nome: string; preco: number; ativo: boolean }[];
+  temTamanhos?: boolean;
+  tamanhos?: ProductSize[];
+}
+
+export interface ProductSize {
+  id?: number | string;
+  nome: string;
+  preco: number;
+  ativo?: boolean;
 }
 
 export interface PaymentMethod {

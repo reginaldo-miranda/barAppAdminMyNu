@@ -140,13 +140,8 @@ router.post("/shutdown", async (req, res) => {
     // Aqui assumimos que quem chama tem acesso ao sistema
     console.log('🛑 Shutdown solicitado. Iniciando desligamento seguro...');
     
-    // Tentar desconectar o Prisma
-    try {
-      await prisma.$disconnect();
-      console.log('✅ Conexão com banco de dados encerrada.');
-    } catch (dbError) {
-      console.error('⚠️ Erro ao desconectar banco:', dbError);
-    }
+    // Tentar desconectar o Prisma (sem await bloquear eternamente)
+    prisma.$disconnect().catch(e => console.error('Erro ao desconectar banco:', e));
 
     res.json({ message: "Sistema desligando com segurança..." });
 

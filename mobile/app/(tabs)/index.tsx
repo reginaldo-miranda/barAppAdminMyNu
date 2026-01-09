@@ -159,6 +159,7 @@ export default function HomeScreen() {
       }, 800);
     } catch (error) {
       console.error('Erro ao sair:', error);
+      Alert.alert('Erro', 'Falha ao encerrar o servidor remoto. Apenas o logout local será realizado.');
       logout();
     }
   };

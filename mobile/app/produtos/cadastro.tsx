@@ -20,6 +20,7 @@ import { Picker } from '@react-native-picker/picker';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { useProduct } from '../../src/contexts/ProductContext';
 import { productService, typeService, unidadeMedidaService, categoryService, setorImpressaoService } from '../../src/services/api';
+import { ProductSize } from '../../src/types';
 
 interface Categoria {
   id: string;
@@ -95,18 +96,9 @@ export default function CadastroProduto() {
   const [selectedSetores, setSelectedSetores] = useState<string[] | null>(null);
   const [loadingSetores, setLoadingSetores] = useState(false);
   const [showSetoresModal, setShowSetoresModal] = useState(false);
-
   const [temVariacao, setTemVariacao] = useState(false);
-  const [possuiVariacaoTamanho, setPossuiVariacaoTamanho] = useState(false);
-  const [permiteMeioAMeio, setPermiteMeioAMeio] = useState(false);
-  const [regraVariacao, setRegraVariacao] = useState('mais_caro');
-  const [precoFixoVariacao, setPrecoFixoVariacao] = useState('');
-
-  const [sizes, setSizes] = useState<any[]>([]);
-  const [loadingSizes, setLoadingSizes] = useState(false);
-  const [newSizeName, setNewSizeName] = useState('');
-  const [newSizePrice, setNewSizePrice] = useState('');
-  const [addingSize, setAddingSize] = useState(false);
+  const [temTamanhos, setTemTamanhos] = useState(false);
+  const [tamanhos, setTamanhos] = useState<{nome: string, preco: string}[]>([]);
 
   // Estados para feedback visual
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -122,7 +114,6 @@ export default function CadastroProduto() {
         return undefined;
       
       case 'preco':
-        if (possuiVariacaoTamanho) return undefined; // Preço vem dos tamanhos
         if (!value.trim()) return 'Preço é obrigatório';
         const precoNum = parseFloat(value.replace(',', '.'));
         if (isNaN(precoNum) || precoNum <= 0) return 'Preço deve ser maior que zero';
@@ -154,10 +145,8 @@ export default function CadastroProduto() {
     errors.descricao = validateField('descricao', descricao);
     errors.estoque = validateField('estoque', estoque);
     setValidationErrors(errors);
-    errors.estoque = validateField('estoque', estoque);
-    setValidationErrors(errors);
     return !Object.values(errors).some(error => error !== undefined);
-  }, [nome, preco, categoriaId, descricao, estoque, possuiVariacaoTamanho]);
+  }, [nome, preco, categoriaId, descricao, estoque]);
 
   useEffect(() => {
     if (!hasPermission('produtos')) {
@@ -316,13 +305,19 @@ export default function CadastroProduto() {
         setEstoque(produto.quantidade ? produto.quantidade.toString() : '0');
         setEstoqueMinimo('5'); // Valor padrão
         setAtivo(produto.ativo !== undefined ? produto.ativo : true);
+        setAtivo(produto.ativo !== undefined ? produto.ativo : true);
         setTemVariacao(!!(produto as any)?.temVariacao);
-        setPossuiVariacaoTamanho(!!(produto as any)?.possuiVariacaoTamanho);
-        setPermiteMeioAMeio(!!(produto as any)?.permiteMeioAMeio);
-        setRegraVariacao((produto as any)?.regraVariacao || 'mais_caro');
-        setPrecoFixoVariacao((produto as any)?.precoFixoVariacao ? Number((produto as any)?.precoFixoVariacao).toFixed(2) : '');
+        setTemTamanhos(!!(produto as any)?.temTamanhos);
+        
+        if (Array.isArray((produto as any)?.tamanhos)) {
+          setTamanhos((produto as any).tamanhos.map((t: any) => ({
+            nome: t.nome,
+            preco: t.preco ? Number(t.preco).toFixed(2) : '0.00'
+          })));
+        } else {
+          setTamanhos([]);
+        }
 
-        setSizes((produto as any)?.sizes || []);
         setDataInclusao(produto.dataInclusao ? new Date(produto.dataInclusao) : new Date());
         setDataAlteracao(new Date());
         const rawSids = (produto as any)?.setoresImpressaoIds;
@@ -410,13 +405,14 @@ export default function CadastroProduto() {
         estoqueMinimo: estoqueMinimo ? parseInt(estoqueMinimo) : 0,
         ativo: ativo,
         temVariacao: temVariacao,
-        possuiVariacaoTamanho: possuiVariacaoTamanho,
-        permiteMeioAMeio: permiteMeioAMeio,
-        regraVariacao: regraVariacao,
-        precoFixoVariacao: precoFixoVariacao ? parseFloat(precoFixoVariacao.replace(',', '.')) : null,
         categoriaId: categoriaSelecionada ? Number(categoriaSelecionada.id) : undefined,
         tipoId: tipoSelecionado ? Number(tipoSelecionado.id) : undefined,
-        unidadeMedidaId: unidadeSelecionada ? Number(unidadeSelecionada.id) : undefined
+        unidadeMedidaId: unidadeSelecionada ? Number(unidadeSelecionada.id) : undefined,
+        temTamanhos: temTamanhos,
+        tamanhos: temTamanhos ? tamanhos.filter(t => t.nome.trim() !== '').map(t => ({
+          nome: t.nome.trim(),
+          preco: parseFloat(t.preco.replace(',', '.'))
+        })) : []
       };
 
       // Só envia setores se tiverem sido carregados corretamente ou modificados
@@ -454,44 +450,32 @@ export default function CadastroProduto() {
                   }, 100);
                 } else {
                   triggerRefresh('create');
-                  
-                  // Se tiver variação de tamanho, redireciona para edição para adicionar tamanhos
-                  if (possuiVariacaoTamanho && response?.data?.product?.id) {
-                    const newId = response.data.product.id;
-                    setSaveSuccess(false); // Reset visual success for next interactions
-                    router.replace({
-                      pathname: '/produtos/cadastro',
-                      params: { id: newId }
-                    });
-                  } else {
-                    // Limpar formulário para novo cadastro (comportamento padrão)
-                    setNome('');
-                    setDescricao('');
-                    setPreco('');
-                    setPrecoCusto('');
-                    setCategoriaId('');
-                    setTipoId('');
-                    setUnidadeId('');
-                    setPermiteMeioAMeio(false);
-                    setRegraVariacao('mais_caro');
-                    setPrecoFixoVariacao('');
-                    setEstoque('');
-                    setEstoqueMinimo('');
-                    setAtivo(true);
-                    setDataAlteracao(new Date());
-                    setSaveSuccess(false);
-                    setSelectedSetores([]); // Resetar para vazio em novo cadastro
-                    // Resetar interações
-                    setHasInteracted({
-                      nome: false,
-                      preco: false,
-                      categoria: false,
-                      descricao: false,
-                      estoque: false,
-                      // @ts-ignore
-                      // setores: false
-                    });
-                  }
+                  // Limpar formulário para novo cadastro
+                  setNome('');
+                  setDescricao('');
+                  setPreco('');
+                  setPrecoCusto('');
+                  setCategoriaId('');
+                  setTipoId('');
+                  setUnidadeId('');
+                  setEstoque('');
+                  setEstoqueMinimo('');
+                  setAtivo(true);
+                  setTemTamanhos(false);
+                  setTamanhos([]);
+                  setDataAlteracao(new Date());
+                  setSaveSuccess(false);
+                  setSelectedSetores([]); // Resetar para vazio em novo cadastro
+                  // Resetar interações
+                  setHasInteracted({
+                    nome: false,
+                    preco: false,
+                    categoria: false,
+                    descricao: false,
+                    estoque: false,
+                    // @ts-ignore
+                    // setores: false
+                  });
                 }
               }
             }
@@ -551,52 +535,6 @@ export default function CadastroProduto() {
       hasError && styles.inputError,
       saveSuccess && styles.inputSuccess
     ];
-  };
-
-  const handleAddSize = async () => {
-    if (!newSizeName.trim()) {
-      Alert.alert('Erro', 'Nome do tamanho é obrigatório');
-      return;
-    }
-    if (!newSizePrice.trim()) {
-      Alert.alert('Erro', 'Preço do tamanho é obrigatório');
-      return;
-    }
-    
-    if (!isEditing || !id) {
-       Alert.alert('Aviso', 'Salve o produto primeiro para adicionar tamanhos.');
-       return;
-    }
-
-    setAddingSize(true);
-    try {
-      const response = await productService.addSize(id as string, {
-         nome: newSizeName,
-         preco: newSizePrice.replace(',', '.')
-      });
-      setSizes([...sizes, response.data]);
-      setNewSizeName('');
-      setNewSizePrice('');
-    } catch (error) {
-      console.error('Erro ao adicionar tamanho:', error);
-      Alert.alert('Erro', 'Falha ao adicionar tamanho.');
-    } finally {
-      setAddingSize(false);
-    }
-  };
-
-  const handleDeleteSize = async (sizeId: number) => {
-    Alert.alert('Confirmar', 'Deseja excluir este tamanho?', [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Excluir', style: 'destructive', onPress: async () => {
-          try {
-             await productService.deleteSize(sizeId);
-             setSizes(sizes.filter(s => s.id !== sizeId));
-          } catch (error) {
-             Alert.alert('Erro', 'Falha ao remover tamanho.');
-          }
-      }}
-    ]);
   };
 
   return (
@@ -808,6 +746,65 @@ export default function CadastroProduto() {
               </View>
             </View>
             <View style={styles.switchContainer}>
+              <Text style={styles.label}>Produto com Tamanhos</Text>
+              <Switch
+                value={temTamanhos}
+                onValueChange={(value) => handleFieldChange(setTemTamanhos, value)}
+                trackColor={{ false: '#ccc', true: '#4CAF50' }}
+                thumbColor={temTamanhos ? '#fff' : '#f4f3f4'}
+              />
+            </View>
+
+            {temTamanhos && (
+              <View style={{ marginTop: 10, padding: 10, backgroundColor: '#f9f9f9', borderRadius: 8 }}>
+                 <Text style={[styles.label, { marginBottom: 10 }]}>Gerenciar Tamanhos</Text>
+                 {tamanhos.map((tamanho, index) => (
+                   <View key={index} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 10 }}>
+                     <TextInput
+                       style={[styles.input, { flex: 2 }]}
+                       placeholder="Nome (Ex: P, M, G)"
+                       value={tamanho.nome}
+                       onChangeText={(text) => {
+                         const newTamanhos = [...tamanhos];
+                         newTamanhos[index].nome = text;
+                         setTamanhos(newTamanhos);
+                       }}
+                     />
+                     <TextInput
+                       style={[styles.input, { flex: 1.5 }]}
+                       placeholder="Preço R$"
+                       keyboardType="numeric"
+                       value={tamanho.preco}
+                       onChangeText={(text) => {
+                         const formatted = formatPrice(text);
+                         const newTamanhos = [...tamanhos];
+                         newTamanhos[index].preco = formatted;
+                         setTamanhos(newTamanhos);
+                       }}
+                     />
+                     <TouchableOpacity 
+                       onPress={() => {
+                         const newTamanhos = [...tamanhos];
+                         newTamanhos.splice(index, 1);
+                         setTamanhos(newTamanhos);
+                       }}
+                       style={{ padding: 8, backgroundColor: '#ffdede', borderRadius: 8 }}
+                     >
+                       <Ionicons name="trash-outline" size={20} color="#ff4444" />
+                     </TouchableOpacity>
+                   </View>
+                 ))}
+                 <TouchableOpacity
+                   style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 12, backgroundColor: '#e3f2fd', borderRadius: 8, marginTop: 5 }}
+                   onPress={() => setTamanhos([...tamanhos, { nome: '', preco: '0.00' }])}
+                 >
+                   <Ionicons name="add-circle-outline" size={20} color="#2196F3" style={{ marginRight: 8 }} />
+                   <Text style={{ color: '#2196F3', fontWeight: 'bold' }}>Adicionar Tamanho</Text>
+                 </TouchableOpacity>
+              </View>
+            )}
+
+            <View style={styles.switchContainer}>
               <Text style={styles.label}>Produto com variação</Text>
               <Switch
                 value={temVariacao}
@@ -816,125 +813,6 @@ export default function CadastroProduto() {
                 thumbColor={temVariacao ? '#fff' : '#f4f3f4'}
               />
             </View>
-            
-            {temVariacao && (
-              <View style={{ marginTop: 10, padding: 10, backgroundColor: '#f9f9f9', borderRadius: 8, borderWidth: 1, borderColor: '#eee' }}>
-                 <View style={styles.switchContainer}>
-                    <Text style={styles.label}>Permite Meio a Meio?</Text>
-                    <Switch
-                      value={permiteMeioAMeio}
-                      onValueChange={(value) => handleFieldChange(setPermiteMeioAMeio, value)}
-                      trackColor={{ false: '#ccc', true: '#4CAF50' }}
-                      thumbColor={permiteMeioAMeio ? '#fff' : '#f4f3f4'}
-                    />
-                 </View>
-                 
-                 {permiteMeioAMeio && (
-                   <>
-                     <Text style={[styles.label, { marginTop: 10 }]}>Regra de Preço (Meio a Meio)</Text>
-                     <View style={styles.pickerContainer}>
-                       <Picker
-                          selectedValue={regraVariacao}
-                          onValueChange={(v) => handleFieldChange(setRegraVariacao, v)}
-                          style={styles.picker}
-                       >
-                          <Picker.Item label="Maior Preço" value="mais_caro" />
-                          <Picker.Item label="Média dos Preços" value="media" />
-                          <Picker.Item label="Preço Fixo" value="fixo" />
-                       </Picker>
-                     </View>
-                     
-                     {regraVariacao === 'fixo' && (
-                       <View style={[styles.inputGroup, { marginTop: 10 }]}>
-                          <Text style={styles.label}>Preço Fixo (R$)</Text>
-                          <TextInput
-                            style={styles.input}
-                            value={precoFixoVariacao}
-                            onChangeText={(t) => setPrecoFixoVariacao(formatPrice(t))}
-                            placeholder="0,00"
-                            placeholderTextColor="#999"
-                            keyboardType="numeric"
-                          />
-                       </View>
-                     )}
-                   </>
-                 )}
-              </View>
-            )}
-          </View>
-
-          {/* Card de Variação de Tamanho */}
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Ionicons name="resize" size={20} color="#E91E63" />
-              <Text style={styles.cardTitle}>Variação de Tamanho</Text>
-            </View>
-
-             <View style={styles.switchContainer}>
-              <Text style={styles.label}>Possui variação de tamanho?</Text>
-              <Switch
-                value={possuiVariacaoTamanho}
-                onValueChange={(value) => handleFieldChange(setPossuiVariacaoTamanho, value)}
-                trackColor={{ false: '#ccc', true: '#E91E63' }}
-                thumbColor={possuiVariacaoTamanho ? '#fff' : '#f4f3f4'}
-              />
-            </View>
-            
-            {possuiVariacaoTamanho && (
-              <View style={{ marginTop: 16 }}>
-                 {!isEditing ? (
-                   <Text style={{ color: '#666', fontStyle: 'italic', marginBottom: 10 }}>Salve o produto para adicionar tamanhos.</Text>
-                 ) : (
-                   <>
-                    <View style={styles.row}>
-                      <View style={[styles.inputGroup, { flex: 2, marginRight: 8 }]}>
-                        <TextInput
-                          style={styles.input}
-                          value={newSizeName}
-                          onChangeText={setNewSizeName}
-                          placeholder="Nome (ex: P, M, G)"
-                          placeholderTextColor="#999"
-                        />
-                      </View>
-                      <View style={[styles.inputGroup, { flex: 1.5, marginRight: 8 }]}>
-                        <TextInput
-                          style={styles.input}
-                          value={newSizePrice}
-                          onChangeText={(t) => setNewSizePrice(formatPrice(t))}
-                          placeholder="R$ 0,00"
-                          placeholderTextColor="#999"
-                          keyboardType="numeric"
-                        />
-                      </View>
-                      <TouchableOpacity 
-                        style={[styles.saveButton, { width: 40, height: 40, justifyContent: 'center', alignItems: 'center', backgroundColor: '#E91E63', marginTop: 0 }]}
-                        onPress={handleAddSize}
-                        disabled={addingSize}
-                      >
-                         {addingSize ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="add" size={24} color="#fff" />}
-                      </TouchableOpacity>
-                    </View>
-
-                    <Text style={[styles.label, { marginTop: 10, marginBottom: 5 }]}>Tamanhos Cadastrados:</Text>
-                    {sizes.length === 0 ? (
-                      <Text style={{ color: '#999', fontStyle: 'italic' }}>Nenhum tamanho cadastrado.</Text>
-                    ) : (
-                      sizes.map((size) => (
-                        <View key={size.id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#eee' }}>
-                          <View>
-                            <Text style={{ fontWeight: 'bold' }}>{size.nome}</Text>
-                            <Text style={{ color: '#4CAF50' }}>R$ {Number(size.preco).toFixed(2)}</Text>
-                          </View>
-                          <TouchableOpacity onPress={() => handleDeleteSize(size.id)}>
-                            <Ionicons name="trash-outline" size={20} color="#f44336" />
-                          </TouchableOpacity>
-                        </View>
-                      ))
-                    )}
-                   </>
-                 )}
-              </View>
-            )}
           </View>
 
           {/* Card de Estoque */}
@@ -1121,32 +999,27 @@ export default function CadastroProduto() {
                 <TouchableOpacity
                   style={[
                     styles.unidadeItem,
-                    (selectedSetores || []).includes(item.id) && styles.unidadeItemSelected
+                    selectedSetores.includes(item.id) && styles.unidadeItemSelected
                   ]}
                   onPress={() => {
-                    setSelectedSetores(prev => {
-                      const current = prev || [];
-                      return current.includes(item.id) 
-                        ? current.filter(id => id !== item.id) 
-                        : [...current, item.id];
-                    });
+                    setSelectedSetores(prev => prev.includes(item.id) ? prev.filter(id => id !== item.id) : [...prev, item.id]);
                   }}
                 >
                   <View style={styles.unidadeItemContent}>
                     <Text style={[
                       styles.unidadeItemName,
-                      (selectedSetores || []).includes(item.id) && styles.unidadeItemSelectedText
+                      selectedSetores.includes(item.id) && styles.unidadeItemSelectedText
                     ]}>
                       {item.nome}
                     </Text>
                     <Text style={[
                       styles.unidadeItemSigla,
-                      (selectedSetores || []).includes(item.id) && styles.unidadeItemSelectedText
+                      selectedSetores.includes(item.id) && styles.unidadeItemSelectedText
                     ]}>
                       {item.modoEnvio === 'whatsapp' ? 'WhatsApp' : 'Impressora'}
                     </Text>
                   </View>
-                  {(selectedSetores || []).includes(item.id) && (
+                  {selectedSetores.includes(item.id) && (
                     <Ionicons name="checkmark" size={20} color="#2196F3" />
                   )}
                 </TouchableOpacity>

@@ -10,9 +10,16 @@ const buildDatabaseUrl = (target) => {
   const envLocal = process.env.DATABASE_URL_LOCAL;
   const envDefault = process.env.DATABASE_URL;
 
-  if (envLocal) return envLocal;
-  // Se não tiver variavel local especifica, usa a padrao se parecer local, senao usa string de conexao local padrao se disponivel ou erro
-  return envDefault || "mysql://root:root@localhost:3306/bar_db"; 
+  // Se envLocal existir (vindo do .env), DEVE ser usado prioridade maxima.
+  if (envLocal) {
+    console.log('🔌 DB Connection Strategy: Using DATABASE_URL_LOCAL from env');
+    return envLocal;
+  }
+  
+  // Se não, usa o hardcoded com a senha correta descoberta no .env
+  const finalUrl = envDefault || "mysql://root:saguides%40123@localhost:3306/appBar"; 
+  console.log('🔌 DB Connection Strategy: Using fallback with discovered credentials', { finalUrl });
+  return finalUrl; 
 };
 
 const urlLocal = buildDatabaseUrl("local");
