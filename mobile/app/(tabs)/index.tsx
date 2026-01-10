@@ -200,6 +200,13 @@ export default function HomeScreen() {
       color: '#9C27B0',
       onPress: () => router.push('/(tabs)/historico'),
     },
+    {
+      title: 'Relatórios',
+      subtitle: 'Estatísticas e análise',
+      icon: 'bar-chart',
+      color: '#607D8B',
+      onPress: () => router.push('/(tabs)/admin-relatorios'),
+    },
   ];
 
   return (
@@ -218,14 +225,16 @@ export default function HomeScreen() {
           <Text style={styles.userRole}>{user?.role || 'Funcionário'}</Text>
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={styles.settingsButton}
-            onPress={handleOpenSettings}
-            activeOpacity={0.8}
-            accessibilityLabel="Abrir Configurações"
-          >
-            <SafeIcon name="settings" size={22} color="#fff" fallbackText="Cfg" />
-          </TouchableOpacity>
+          {Platform.OS === 'web' && (
+            <TouchableOpacity
+              style={styles.settingsButton}
+              onPress={handleOpenSettings}
+              activeOpacity={0.8}
+              accessibilityLabel="Abrir Configurações"
+            >
+              <SafeIcon name="settings" size={22} color="#fff" fallbackText="Cfg" />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} activeOpacity={0.8}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <SafeIcon name="log-out" size={22} color="#fff" fallbackText="Sair" />
@@ -235,7 +244,8 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* Status Rápido */}
+      {/* Status Rápido - Apenas Web */}
+      {Platform.OS === 'web' && (
       <View style={styles.statsContainer}>
         <Text style={styles.sectionTitle}>Status de Hoje</Text>
         <View style={styles.statsGrid}>
@@ -261,12 +271,19 @@ export default function HomeScreen() {
           </View>
         </View>
       </View>
+      )}
 
       {/* Menu Principal */}
       <View style={styles.menuContainer}>
         <Text style={styles.sectionTitle}>Menu Principal</Text>
         <View style={styles.menuGrid}>
-          {menuItems.map((item, index) => (
+          {menuItems.filter(item => {
+            // Filtrar Histórico no mobile
+            if (Platform.OS !== 'web' && item.title === 'Histórico de Vendas') return false;
+            // Filtrar Relatórios no mobile (apenas Desktop)
+            if (Platform.OS !== 'web' && item.title === 'Relatórios') return false;
+            return true;
+          }).map((item, index) => (
             <TouchableOpacity
               key={index}
               style={[styles.menuItem, { borderLeftColor: item.color }]}

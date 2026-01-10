@@ -9,5 +9,8 @@
     "start:api:win": "powershell -ExecutionPolicy Bypass -File .\\start-api.ps1",
     "start:mobile:win": "powershell -ExecutionPolicy Bypass -File .\\start-mobile.ps1",
     "start:all:win": "powershell -ExecutionPolicy Bypass -File .\\start-all.ps1"
+  },
+  "dependencies": {
+    "expo": "^54.0.31"
   }
 }

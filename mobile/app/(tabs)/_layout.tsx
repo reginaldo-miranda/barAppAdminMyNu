@@ -8,10 +8,31 @@ import { HapticTab } from '../../components/haptic-tab';
 import ProductsTabButton from '../../src/components/ProductsTabButton';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { SafeIcon } from '../../components/SafeIcon';
+import { Platform } from 'react-native';
 
 export default function TabLayout() {
   const authContext = useAuth() as any;
   const { user, isAuthenticated, loading, hasPermission, isAdmin } = authContext;
+
+  // Configuração específica para Produtos para evitar conflito de href/tabBarButton no Mobile
+  const produtosOptions = Platform.OS === 'web' 
+    ? {
+        // href removido para evitar conflito com tabBarButton
+        title: 'Adm Produtos',
+        headerTitle: 'Gerenciar Produtos',
+        tabBarButton: (props: any) => (
+          <ProductsTabButton 
+            focused={props.accessibilityState?.selected || false} 
+          />
+        ),
+      }
+    : {
+        href: null,
+        title: 'Adm Produtos', 
+        headerTitle: 'Gerenciar Produtos',
+      };
+
+
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -86,65 +107,75 @@ export default function TabLayout() {
       <Tabs.Screen
         name="caixa"
         options={{
+          href: Platform.OS === 'web' ? '/(tabs)/caixa' : null,
           title: 'Caixa',
           headerTitle: 'Caixa - Vendas Abertas',
           tabBarIcon: () => <SafeIcon name="cash" size={24} color="#FF0000" fallbackText="R$" />,
         }}
       />
+
       <Tabs.Screen
         name="historico"
         options={{
+          href: Platform.OS === 'web' ? '/(tabs)/historico' : null,
           title: 'Histórico',
           headerTitle: 'Histórico de Vendas',
           tabBarIcon: ({ color }) => <SafeIcon name="time" size={24} color={color} fallbackText="Hist." />,
         }}
       />
       
-      {/* Abas Administrativas - Visíveis apenas para usuários com permissões */}
-      {hasPermission('produtos') && (
+      {/* Abas Administrativas - Visíveis apenas para usuários com permissões OU se estiver na WEB (Desktop) */}
+      {(hasPermission('produtos') || Platform.OS === 'web') && (
         <Tabs.Screen
           name="admin-produtos"
-          options={{
-            title: 'Produtos',
-            headerTitle: 'Gerenciar Produtos',
-            tabBarButton: (props) => (
-              <ProductsTabButton 
-                focused={props.accessibilityState?.selected || false} 
-              />
-            ),
-          }}
+          options={produtosOptions as any}
         />
       )}
       
-      {hasPermission('funcionarios') && (
+      {(hasPermission('funcionarios') || Platform.OS === 'web') && (
         <Tabs.Screen
           name="admin-funcionarios"
           options={{
-            title: 'Funcionários',
+            href: null,
+            title: 'Adm Func.',
             headerTitle: 'Gerenciar Funcionários',
             tabBarIcon: ({ color }) => <SafeIcon name="people" size={24} color={color} fallbackText="Func." />,
           }}
         />
       )}
       
-      {hasPermission('clientes') && (
+      {(hasPermission('clientes') || Platform.OS === 'web') && (
         <Tabs.Screen
           name="admin-clientes"
           options={{
-            title: 'Clientes',
+            href: null,
+            title: 'Adm Clientes',
             headerTitle: 'Gerenciar Clientes',
             tabBarIcon: ({ color }) => <SafeIcon name="person" size={24} color={color} fallbackText="Cli." />,
           }}
         />
       )}
       
-      {isAdmin() && (
+      {(isAdmin() || Platform.OS === 'web') && (
         <Tabs.Screen
           name="admin-configuracoes"
           options={{
-            title: 'Config',
+            href: Platform.OS === 'web' ? '/(tabs)/admin-configuracoes' : null,
+            title: 'Adm Config',
             headerTitle: 'Configurações do Sistema',
             tabBarIcon: ({ color }) => <SafeIcon name="settings" size={24} color={color} fallbackText="Conf." />,
+          }}
+        />
+      )}
+
+      {(hasPermission('relatorios') || Platform.OS === 'web') && (
+        <Tabs.Screen
+          name="admin-relatorios"
+          options={{
+            href: Platform.OS === 'web' ? '/(tabs)/admin-relatorios' : null,
+            title: 'Adm Relatórios',
+            headerTitle: 'Relatórios Administrativos',
+            tabBarIcon: ({ color }) => <SafeIcon name="bar-chart" size={24} color={color} fallbackText="Rel." />,
           }}
         />
       )}

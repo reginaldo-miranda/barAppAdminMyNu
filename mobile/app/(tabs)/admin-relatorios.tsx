@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import { router } from 'expo-router';
 import { SafeIcon } from '../../components/SafeIcon';
 import { saleService, productService, customerService, employeeService } from '../../src/services/api';
 import { useAuth } from '../../src/contexts/AuthContext';
@@ -16,6 +17,7 @@ import ScreenIdentifier from '../../src/components/ScreenIdentifier';
 
 interface ReportStats {
   totalVendas: number;
+  totalProdutos: number;
   faturamentoTotal: number;
   faturamentoMedio: number;
   produtoMaisVendido: string;
@@ -39,6 +41,7 @@ export default function AdminRelatoriosScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [stats, setStats] = useState<ReportStats>({
     totalVendas: 0,
+    totalProdutos: 0,
     faturamentoTotal: 0,
     faturamentoMedio: 0,
     produtoMaisVendido: 'N/A',
@@ -58,12 +61,27 @@ export default function AdminRelatoriosScreen() {
   const [periodo, setPeriodo] = useState<'hoje' | 'semana' | 'mes' | 'total'>('hoje');
 
   useEffect(() => {
-    if (!hasPermission('relatorios')) {
-      Alert.alert('Acesso Negado', 'Você não tem permissão para acessar esta tela');
-      return;
+    if (hasPermission('relatorios')) {
+      loadReports();
+    } else {
+      setLoading(false);
     }
-    loadReports();
   }, [periodo]);
+
+  if (!hasPermission('relatorios')) {
+    return (
+      <View style={styles.container}>
+        <ScreenIdentifier screenName="Admin - Relatórios" />
+        <View style={styles.loadingContainer}>
+          <SafeIcon name="lock-closed" size={64} color="#ccc" fallbackText="🔒" />
+          <Text style={[styles.loadingText, { fontWeight: 'bold', marginTop: 16 }]}>Acesso Negado</Text>
+          <Text style={{ color: '#888', textAlign: 'center', marginTop: 8 }}>
+            Você não tem permissão para acessar os relatórios.
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   const loadReports = async () => {
     try {
@@ -122,11 +140,34 @@ export default function AdminRelatoriosScreen() {
         canceladas: filteredSales.filter((sale: any) => sale.status === 'cancelada').length,
       };
 
-      // Produto mais vendido (simplificado)
-      const produtoMaisVendido = 'Produto A'; // Implementar lógica real se necessário
+      // Produto mais vendido
+      const productCounts: { [key: string]: number } = {};
+      
+      filteredSales.forEach((sale: any) => {
+        if (sale.itens && Array.isArray(sale.itens)) {
+          sale.itens.forEach((item: any) => {
+            const productName = item.nomeProduto || item.produto?.nome || 'Desconhecido';
+            const quantity = Number(item.quantidade) || 0;
+            if (quantity > 0) {
+              productCounts[productName] = (productCounts[productName] || 0) + quantity;
+            }
+          });
+        }
+      });
+
+      let produtoMaisVendido = 'Nenhum';
+      let maxVendas = 0;
+
+      Object.entries(productCounts).forEach(([product, count]) => {
+        if (count > maxVendas) {
+          maxVendas = count;
+          produtoMaisVendido = product;
+        }
+      });
 
       setStats({
         totalVendas,
+        totalProdutos: products.length,
         faturamentoTotal,
         faturamentoMedio,
         produtoMaisVendido,
@@ -176,15 +217,27 @@ export default function AdminRelatoriosScreen() {
     </TouchableOpacity>
   );
 
-  const renderStatCard = (title: string, value: string | number, icon: string, color: string) => (
-    <View style={[styles.statCard, { borderLeftColor: color }]}>
-      <View style={styles.statCardHeader}>
-        <SafeIcon name={icon as any} size={24} color={color} fallbackText="•" />
-        <Text style={styles.statCardTitle}>{title}</Text>
+  const renderStatCard = (title: string, value: string | number, icon: string, color: string, onPress?: () => void) => {
+    const CardContent = (
+      <View style={[styles.statCard, { borderLeftColor: color }]}>
+        <View style={styles.statCardHeader}>
+          <SafeIcon name={icon as any} size={24} color={color} fallbackText="•" />
+          <Text style={styles.statCardTitle}>{title}</Text>
+        </View>
+        <Text style={styles.statCardValue}>{value}</Text>
       </View>
-      <Text style={styles.statCardValue}>{value}</Text>
-    </View>
-  );
+    );
+
+    if (onPress) {
+      return (
+        <TouchableOpacity key={title} onPress={onPress} activeOpacity={0.7}>
+          {CardContent}
+        </TouchableOpacity>
+      );
+    }
+
+    return <View key={title}>{CardContent}</View>;
+  };
 
   if (loading && !refreshing) {
     return (
@@ -227,6 +280,13 @@ export default function AdminRelatoriosScreen() {
         {renderStatCard('Faturamento Total', formatCurrency(stats.faturamentoTotal), 'cash', '#2196F3')}
         {renderStatCard('Faturamento Médio', formatCurrency(stats.faturamentoMedio), 'trending-up', '#FF9800')}
         {renderStatCard('Produto Mais Vendido', stats.produtoMaisVendido, 'star', '#9C27B0')}
+        {renderStatCard(
+          'Total de Produtos', 
+          stats.totalProdutos, 
+          'cube', 
+          '#3F51B5', 
+          () => router.push('/(tabs)/admin-produtos')
+        )}
       </View>
 
       {/* Vendas por Tipo */}
@@ -252,8 +312,20 @@ export default function AdminRelatoriosScreen() {
       {/* Informações Gerais */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Informações Gerais</Text>
-        {renderStatCard('Total de Clientes', stats.totalClientes, 'people', '#2196F3')}
-        {renderStatCard('Total de Funcionários', stats.totalFuncionarios, 'person', '#9C27B0')}
+        {renderStatCard(
+          'Total de Clientes', 
+          stats.totalClientes, 
+          'people', 
+          '#2196F3',
+          () => router.push('/(tabs)/admin-clientes')
+        )}
+        {renderStatCard(
+          'Total de Funcionários', 
+          stats.totalFuncionarios, 
+          'person', 
+          '#9C27B0',
+          () => router.push('/(tabs)/admin-funcionarios')
+        )}
       </View>
     </ScrollView>
   );
