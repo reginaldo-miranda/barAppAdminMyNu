@@ -500,11 +500,11 @@ useEffect(() => {
       />
       
       <View style={styles.header}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: Platform.OS !== 'web' && Dimensions.get('window').width < 768 ? 16 : 0 }}>
           <TouchableOpacity onPress={() => router.push('/')} accessibilityLabel="Voltar para Home" style={{ marginRight: 12 }}>
-            <SafeIcon name="arrow-back" size={24} color="#2196F3" fallbackText="←" />
+            <SafeIcon name="arrow-back" size={Platform.OS !== 'web' && Dimensions.get('window').width < 768 ? 20 : 24} color="#2196F3" fallbackText="←" />
           </TouchableOpacity>
-          <Text style={styles.title}>Comandas</Text>
+          <Text style={[styles.title, Platform.OS !== 'web' && Dimensions.get('window').width < 768 && { fontSize: 18 }]}>Comandas</Text>
         </View>
         <TouchableOpacity style={styles.button} onPress={handleOpenModal}>
           <Text style={styles.buttonText}>Nova Comanda</Text>
