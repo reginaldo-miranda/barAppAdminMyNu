@@ -11,7 +11,7 @@ const router = express.Router();
 router.post('/create', async (req, res) => {
   try {
     const prisma = getActivePrisma();
-    const { funcionario, cliente, mesa, tipoVenda, nomeComanda, valorTotal, observacoes } = req.body;
+    const { funcionario, cliente, entregador, mesa, tipoVenda, nomeComanda, valorTotal, observacoes } = req.body;
 
     // Verificar se funcionário foi informado
     if (funcionario === undefined || funcionario === null || String(funcionario).trim() === '') {
@@ -61,6 +61,15 @@ router.post('/create', async (req, res) => {
       clienteId = cli.id;
     }
 
+    // Validar entregador
+    let entregadorId = null;
+    if (entregador !== undefined && entregador !== null && !(typeof entregador === 'string' && entregador.trim() === '')) {
+      const entNum = Number(entregador);
+      if (Number.isFinite(entNum) && entNum > 0) {
+         entregadorId = entNum;
+      }
+    }
+
     // Validar mesa se tipo for mesa
     let mesaId = null;
     const tipoFinal = tipoVenda ? String(tipoVenda) : 'balcao';
@@ -93,6 +102,7 @@ router.post('/create', async (req, res) => {
         tipoVenda: tipoFinal,
         funcionarioId: funcionarioId ?? null,
         clienteId: clienteId ?? null,
+        entregadorId: entregadorId ?? null,
         mesaId: mesaId ?? null,
         nomeComanda: typeof nomeComanda === 'string' && nomeComanda.trim() !== '' ? nomeComanda.trim() : null,
         subtotal: 0,
@@ -104,6 +114,7 @@ router.post('/create', async (req, res) => {
       },
       include: {
         funcionario: { select: { nome: true } },
+        entregador: { select: { nome: true } },
         cliente: { select: { nome: true } },
         mesa: { include: { funcionarioResponsavel: { select: { nome: true } } } },
         itens: { include: { product: { select: { nome: true, precoVenda: true } } } },
@@ -208,6 +219,9 @@ const mapSaleResponse = (venda) => {
   if (venda.funcionario) {
     base.funcionario = { _id: String(venda.funcionario.id), id: venda.funcionario.id, nome: venda.funcionario.nome };
   }
+  if (venda.entregador) {
+    base.entregador = { _id: String(venda.entregador.id), id: venda.entregador.id, nome: venda.entregador.nome };
+  }
   if (venda.cliente) {
     base.cliente = { _id: String(venda.cliente.id), id: venda.cliente.id, nome: venda.cliente.nome };
   }
@@ -222,6 +236,64 @@ const mapSaleResponse = (venda) => {
 };
 const mapSales = (arr) => (Array.isArray(arr) ? arr.map(mapSaleResponse) : arr);
 
+// Atualizar dados gerais da venda (cliente, entregador, delivery, etc)
+router.put('/:id/update', async (req, res) => {
+  try {
+    const prisma = getActivePrisma();
+    const { id } = req.params;
+    const { clienteId, entregadorId, funcionarioId, isDelivery, deliveryAddress, deliveryDistance, deliveryFee, status } = req.body;
+    
+    // Validar ID
+    const saleId = Number(id);
+    if (!saleId) return res.status(400).json({ error: 'ID inválido' });
+
+    // BUSCAR VENDA ATUAL PARA RECALCULAR TOTAL
+    const currentSale = await prisma.sale.findUnique({ where: { id: saleId } });
+    if (!currentSale) return res.status(404).json({ error: 'Venda não encontrada' });
+
+    // Preparar dados para update
+    const data = {};
+    if (clienteId !== undefined) data.clienteId = clienteId ? Number(clienteId) : null;
+    if (entregadorId !== undefined) data.entregadorId = entregadorId ? Number(entregadorId) : null;
+    if (funcionarioId !== undefined) data.funcionarioId = funcionarioId ? Number(funcionarioId) : null;
+    
+    if (isDelivery !== undefined) data.isDelivery = Boolean(isDelivery);
+    if (deliveryAddress !== undefined) data.deliveryAddress = String(deliveryAddress);
+    if (deliveryDistance !== undefined) data.deliveryDistance = Number(deliveryDistance);
+    
+    let newDeliveryFee = currentSale.deliveryFee;
+    if (deliveryFee !== undefined) {
+        newDeliveryFee = Number(deliveryFee);
+        data.deliveryFee = newDeliveryFee;
+    }
+    
+    if (status) data.status = status;
+
+    // Recalcular Total: Subtotal + Taxa Entrega - Desconto
+    const subtotal = Number(currentSale.subtotal || 0);
+    const desconto = Number(currentSale.desconto || 0);
+    const taxa = Number(newDeliveryFee || 0);
+    data.total = subtotal + taxa - desconto;
+
+    const updated = await prisma.sale.update({
+      where: { id: saleId },
+      data,
+      include: {
+        funcionario: { select: { nome: true } },
+        entregador: { select: { nome: true } },
+        cliente: { select: { nome: true } },
+        mesa: { include: { funcionarioResponsavel: { select: { nome: true } } } },
+        itens: { include: { product: { select: { nome: true, precoVenda: true } } } },
+      }
+    });
+
+    res.json(mapSaleResponse(normalizeSale(updated)));
+  } catch (error) {
+    console.error('Erro ao atualizar venda:', error);
+    res.status(500).json({ error: 'Erro ao atualizar venda' });
+  }
+});
+
 // Listar vendas abertas (Prisma)
 router.get('/open', async (req, res) => {
   try {
@@ -230,6 +302,7 @@ router.get('/open', async (req, res) => {
       where: { status: 'aberta' },
       include: {
         funcionario: { select: { nome: true } },
+        entregador: { select: { nome: true } },
         cliente: { select: { nome: true } },
         mesa: { include: { funcionarioResponsavel: { select: { nome: true } } } },
         itens: { include: { product: { select: { nome: true, precoVenda: true } } } },
@@ -255,6 +328,7 @@ router.get('/open-min', async (req, res) => {
         tipoVenda: true,
         nomeComanda: true,
         funcionario: { select: { nome: true } },
+        entregador: { select: { nome: true } },
         cliente: { select: { nome: true } },
         desconto: true,
         itens: { select: { quantidade: true, precoUnitario: true, subtotal: true } },
@@ -291,12 +365,13 @@ router.get('/open-min', async (req, res) => {
 router.get('/list', async (req, res) => {
   try {
     const prisma = getActivePrisma();
-    const { status, funcionario, cliente, dataInicio, dataFim } = req.query;
+    const { status, funcionario, cliente, dataInicio, dataFim, isDelivery } = req.query;
     const where = {};
 
     if (status) where.status = String(status);
     if (funcionario) where.funcionarioId = Number(funcionario);
     if (cliente) where.clienteId = Number(cliente);
+    if (isDelivery !== undefined) where.isDelivery = isDelivery === 'true';
 
     if (dataInicio || dataFim) {
       where.dataVenda = {};
@@ -308,6 +383,7 @@ router.get('/list', async (req, res) => {
       where,
       include: {
         funcionario: { select: { nome: true } },
+        entregador: { select: { nome: true } },
         cliente: { select: { nome: true } },
         mesa: { include: { funcionarioResponsavel: { select: { nome: true } } } },
         itens: { include: { product: { select: { nome: true, precoVenda: true } } } },
@@ -341,6 +417,7 @@ router.get('/finalizadas', async (req, res) => {
       where,
       include: {
         funcionario: { select: { nome: true } },
+        entregador: { select: { nome: true } },
         cliente: { select: { nome: true } },
         mesa: { select: { numero: true, nome: true } },
       },
@@ -367,6 +444,7 @@ router.get('/mesa/:mesaId', async (req, res) => {
       where: { mesaId },
       include: {
         funcionario: { select: { nome: true } },
+        entregador: { select: { nome: true } },
         cliente: { select: { nome: true } },
         mesa: { select: { numero: true, nome: true } },
         itens: { include: { product: { select: { nome: true, precoVenda: true } } } },
@@ -395,6 +473,7 @@ router.get('/:id', async (req, res) => {
       where: { id },
       include: {
         funcionario: { select: { nome: true } },
+        entregador: { select: { nome: true } },
         cliente: { select: { nome: true } },
         mesa: { select: { numero: true, nome: true } },
         itens: { include: { product: { select: { nome: true, precoVenda: true } } } },
@@ -1343,5 +1422,122 @@ router.post('/:id/confirm-delivery', async (req, res) => {
     }
 });
 
+
+// Imprimir comprovante de entrega (Cupom)
+router.post('/:id/delivery-print', async (req, res) => {
+  try {
+    const prisma = getActivePrisma();
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: 'ID inválido' });
+    }
+
+    const venda = await prisma.sale.findUnique({
+      where: { id },
+      include: {
+        funcionario: { select: { nome: true } },
+        cliente: { select: { nome: true, endereco: true, fone: true } },
+        itens: true,
+      }
+    });
+
+    if (!venda) return res.status(404).json({ error: 'Venda não encontrada' });
+
+    // 1. Encontrar impressora (Tenta 'Caixa', 'Balcao' ou a primeira ativa)
+    let printer = await prisma.printer.findFirst({
+      where: { 
+        OR: [
+          { nome: { contains: 'Caixa' } },
+          { nome: { contains: 'Delivery' } },
+          { nome: { contains: 'Balcão' } }
+        ],
+        ativo: true 
+      }
+    });
+    
+    if (!printer) {
+      printer = await prisma.printer.findFirst({ where: { ativo: true } });
+    }
+
+    if (!printer) {
+      return res.status(400).json({ error: 'Nenhuma impressora ativa encontrada no sistema' });
+    }
+
+    // 2. Montar Conteúdo
+    const pad = (str, len) => (str + ' '.repeat(len)).slice(0, len);
+    const line = '-'.repeat(32);
+    const dateStr = new Date().toLocaleString('pt-BR');
+    
+    let content = '';
+    content += '       PEDIDO DELIVERY\n';
+    content += `${line}\n`;
+    content += `Comanda: ${venda.nomeComanda || venda.id}\n`;
+    content += `Data: ${dateStr}\n`;
+    content += `${line}\n`;
+    
+    if (venda.cliente) {
+        content += `CLIENTE: ${venda.cliente.nome}\n`;
+        if (venda.cliente.fone) content += `Tel: ${venda.cliente.fone}\n`;
+    } else {
+        content += `CLIENTE: Nao Identificado\n`;
+    }
+    
+    if (venda.deliveryAddress) {
+        // Quebra de linha simples para endereço
+        const addr = venda.deliveryAddress;
+        content += `ENDERECO:\n${addr.slice(0, 32)}\n`;
+        if (addr.length > 32) content += `${addr.slice(32, 64)}\n`;
+    } else if (venda.cliente?.endereco) {
+         content += `ENDERECO:\n${venda.cliente.endereco.slice(0, 32)}\n`;
+    }
+    
+    content += `${line}\n`;
+    content += `ITEM             QTD   VALOR\n`;
+    
+    let subtotalItens = 0;
+    for (const item of venda.itens) {
+        const nome = item.nomeProduto.slice(0, 16);
+        const qtd = String(item.quantidade).padStart(3);
+        const totalItem = Number(item.subtotal); // ou qtd * unitario
+        subtotalItens += totalItem;
+        const val = totalItem.toFixed(2).padStart(7);
+        content += `${pad(nome, 16)} ${qtd} ${val}\n`;
+        
+        if (item.observacoes) {
+            content += `  Obs: ${item.observacoes.slice(0, 28)}\n`;
+        }
+    }
+    
+    content += `${line}\n`;
+    content += `Subtotal:        R$ ${subtotalItens.toFixed(2).padStart(8)}\n`;
+    const taxa = Number(venda.deliveryFee || 0);
+    if (taxa > 0) {
+        content += `Taxa Entrega:    R$ ${taxa.toFixed(2).padStart(8)}\n`;
+    }
+    const desc = Number(venda.desconto || 0);
+    if (desc > 0) {
+        content += `Desconto:       -R$ ${desc.toFixed(2).padStart(8)}\n`;
+    }
+    
+    const totalFinal = subtotalItens + taxa - desc;
+    content += `TOTAL:           R$ ${totalFinal.toFixed(2).padStart(8)}\n`;
+    content += `${line}\n\n\n`; // Feed
+
+    // 3. Enviar job
+    await enqueuePrintJob({
+        saleId: venda.id,
+        productId: 0, // Placeholder
+        setorId: 0,   // Placeholder
+        printerId: printer.id,
+        content
+    });
+
+    res.json({ success: true, message: 'Impresso com sucesso' });
+
+  } catch (error) {
+    console.error('Erro ao imprimir delivery:', error);
+    res.status(500).json({ message: 'Erro ao processar impressão: ' + (error.message || error) });
+  }
+});
 
 export default router;

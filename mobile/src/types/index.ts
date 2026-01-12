@@ -32,6 +32,19 @@ export interface Sale {
   deliveryDistance?: number;
   deliveryFee?: number;
   deliveryStatus?: string;
+  entregadorId?: number;
+  entregador?: {
+    _id: string;
+    id?: number;
+    nome: string;
+  };
+  clienteId?: number;
+  cliente?: {
+    _id: string;
+    id?: number;
+    nome: string;
+    endereco?: string;
+  };
 }
 
 export interface Product {

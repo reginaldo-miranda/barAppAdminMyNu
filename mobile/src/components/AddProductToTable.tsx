@@ -25,6 +25,7 @@ interface AddProductToTableProps {
   onRemoveItem: (item: CartItem) => void;
   isViewMode?: boolean;
   hideSaleSection?: boolean;
+  ListFooterComponent?: React.ReactNode;
 }
 
 const AddProductToTable: React.FC<AddProductToTableProps> = ({
@@ -34,6 +35,7 @@ const AddProductToTable: React.FC<AddProductToTableProps> = ({
   onRemoveItem,
   isViewMode = false,
   hideSaleSection = false,
+  ListFooterComponent,
 }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
@@ -98,19 +100,15 @@ const AddProductToTable: React.FC<AddProductToTableProps> = ({
       const data = used.length > 0 ? used : await categoryService.getAll();
 
       // Configuração dos filtros de categoria igual à tela de produtos
-      const categoryFilters = [
-        { key: '', label: 'Todas', icon: 'apps', id: null },
-        ...data.map((categoria: any) => ({
-          key: String(categoria.id ?? categoria._id ?? categoria.label ?? categoria.nome),
-          label: String(categoria.label ?? categoria.nome ?? ''),
-          icon: 'pricetag',
-          id: categoria.id ?? categoria._id ?? null
-        }))
-      ];
-
-      console.log('📦 Categorias carregadas:', categoryFilters.length);
-      setRawCategories(Array.isArray(data) ? data : []);
-      setCategories(categoryFilters);
+      const formatted = (data.data || data || []).map((cat: any) => ({
+        key: String(cat.nome || cat.label || '').toLowerCase(),
+        label: cat.nome || cat.label || 'Sem Nome',
+        id: cat.id
+      }));
+      
+      const allOption = { key: '', label: 'Todos' };
+      setCategories([allOption, ...formatted]);
+      setRawCategories((data.data || data || []));
     } catch (error) {
       console.error('❌ Erro ao carregar categorias:', error);
       // Fallback para categorias padrão apenas em caso de erro
@@ -128,25 +126,47 @@ const AddProductToTable: React.FC<AddProductToTableProps> = ({
   };
 
   // Helper para resolver nome da categoria do produto (aceita id ou string)
-  const resolveCategoriaNome = (catVal: any): string => {
-    const raw = String(catVal ?? '').trim();
-    if (!raw) return '';
-    const isNumeric = /^\d+$/.test(raw);
-    if (isNumeric) {
-      const id = Number(raw);
-      const found = rawCategories.find((c: any) => Number(c?.id) === id);
-      return String((found?.nome ?? found?.label ?? '')).trim();
+  const resolveCategoriaNome = (categoriaRaw: any) => {
+    if (!categoriaRaw) return '';
+    // Se for string, retorna direto
+    if (typeof categoriaRaw === 'string') return categoriaRaw;
+    // Se for objeto { id, nome }
+    if (categoriaRaw.nome) return categoriaRaw.nome;
+    // Se for número (ID), tenta achar na lista
+    if (typeof categoriaRaw === 'number') {
+      const found = rawCategories.find((c: any) => c.id === categoriaRaw);
+      if (found) return found.nome || found.label;
     }
-    return raw;
+    return '';
   };
 
-  const matchesSelectedCategory = (produto: any, selected: string): boolean => {
-    if (!selected) return true;
-    const selLower = String(selected).toLowerCase();
-    const selIsNumeric = /^\d+$/.test(String(selected));
-    if (selIsNumeric) {
-      const selId = Number(selected);
-      const pid = Number(produto?.categoriaId ?? 0);
+  // Comparação flexível de categorias
+  const matchesSelectedCategory = (produto: any, selectedKey: string) => {
+    if (!selectedKey) return true; // Todos
+    const selLower = selectedKey.toLowerCase();
+    
+    // Tentar bater ID se a key vier de um filtro que usa ID mas armazenou label...
+    // Na verdade o filtro armazena key = nome.toLowerCase().
+    // Mas vamos dar suporte a check por ID se o produto tiver categoriaId
+    const catId = produto.categoriaId;
+    if (catId) {
+       // Achar categoria correspondente ao selectedKey (que é nome)
+       // Isso é complexo se não tivermos o map reverso fácil.
+       // Vamos simplificar: comparar strings.
+       // Mas se produto tem apenas ID e não string??
+       // resolveCategoriaNome resolve isso.
+    }
+
+    // Workaround para "Bebidas" bater com "Bebidas (ID 1)" se fosse o caso.
+    // Mas aqui a key é o nome normalizado.
+    
+    // Tenta bater pelo ID caso o selectedCategory seja um numero em string? Não, é nome.
+    // Vamos varrer os campos de classificação
+    
+    // Se selectedKey puder ser um ID (alguma logica legada):
+    if (!isNaN(Number(selectedKey)) && Number(selectedKey) > 0) {
+      const selId = Number(selectedKey);
+      const pid = Number(produto?.categoriaId);
       if (Number.isInteger(selId) && Number.isInteger(pid) && pid > 0) {
         return selId === pid;
       }
@@ -439,12 +459,17 @@ const AddProductToTable: React.FC<AddProductToTableProps> = ({
             </View>
 
             {saleItems.length === 0 ? (
-              <View style={styles.emptySale}>
-                <Ionicons name="receipt-outline" size={48} color="#ccc" />
-                <Text style={styles.emptySaleText}>Nenhum item adicionado</Text>
-                <Text style={styles.emptySaleSubtext}>
-                  Adicione produtos para começar a venda
-                </Text>
+              <View style={{ flex: 1 }}>
+                  <View style={styles.emptySale}>
+                    <Ionicons name="receipt-outline" size={48} color="#ccc" />
+                    <Text style={styles.emptySaleText}>Nenhum item adicionado</Text>
+                    <Text style={styles.emptySaleSubtext}>
+                      Adicione produtos para começar a venda
+                    </Text>
+                  </View>
+                  <ScrollView>
+                    {ListFooterComponent}
+                  </ScrollView>
               </View>
             ) : (
               <FlatList
@@ -459,6 +484,7 @@ const AddProductToTable: React.FC<AddProductToTableProps> = ({
                 windowSize={5}
                 maxToRenderPerBatch={10}
                 updateCellsBatchingPeriod={50}
+                ListFooterComponent={ListFooterComponent as React.ReactElement}
               />
             )}
           </View>
@@ -488,7 +514,7 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
   },
   productsSection: {
-    flex: 2,
+    flex: 0.8,
     padding: 12,
     backgroundColor: '#fff',
   },
@@ -560,7 +586,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
   },
   saleSection: {
-    flex: 1,
+    flex: 1.2,
     backgroundColor: '#fff',
     borderLeftWidth: 1,
     borderLeftColor: '#ddd',

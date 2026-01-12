@@ -22,7 +22,8 @@ import { router, useLocalSearchParams } from 'expo-router';
 import MapView, { Marker, Polyline } from '../src/components/NativeMaps';
 import { GooglePlacesAutocomplete } from '../src/components/GooglePlacesAutocompleteWrapper';
 import Constants from 'expo-constants';
-import api, { saleService, mesaService, comandaService, getWsUrl, authService, API_URL, companyService } from '../src/services/api';
+import api, { saleService, mesaService, comandaService, getWsUrl, authService, API_URL, companyService, customerService, employeeService } from '../src/services/api';
+import DeliveryDetailsModal from '../src/components/DeliveryDetailsModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../src/services/storage';
 import AddProductToTable from '../src/components/AddProductToTable';
@@ -44,6 +45,8 @@ export default function SaleScreen() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [sale, setSale] = useState<Sale | null>(null);
   const [loading, setLoading] = useState(true);
+  // Modal states
+  const [deliveryModalVisible, setDeliveryModalVisible] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('dinheiro');
   const [isViewMode, setIsViewMode] = useState(false);
@@ -73,6 +76,15 @@ export default function SaleScreen() {
   const [deliveryFee, setDeliveryFee] = useState(0);
   const [companyConfig, setCompanyConfig] = useState<any>(null);
   const [showDeliveryMap, setShowDeliveryMap] = useState(false);
+  
+  // Client & Employee States
+  const [clients, setClients] = useState<any[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [selectedCliente, setSelectedCliente] = useState<any | null>(null);
+  const [selectedEntregador, setSelectedEntregador] = useState<any | null>(null);
+  const [showClientModal, setShowClientModal] = useState(false);
+  const [searchClientQuery, setSearchClientQuery] = useState('');
+  const [showEmployeeModal, setShowEmployeeModal] = useState(false);
 
   // API Key for Maps
   const GOOGLE_API_KEY = Constants.expoConfig?.android?.config?.googleMaps?.apiKey || Constants.expoConfig?.ios?.config?.googleMapsApiKey || '';
@@ -93,7 +105,7 @@ export default function SaleScreen() {
     return () => { mounted = false; };
   }, []);
 
-  // Load Company Config for Delivery
+  // Load Company Config, Employees
   useEffect(() => {
     (async () => {
         try {
@@ -101,11 +113,37 @@ export default function SaleScreen() {
             if (res.data) {
                 setCompanyConfig(res.data);
             }
+            
+            // Load Employees
+            const empRes = await employeeService.getAll();
+            if (empRes.data && Array.isArray(empRes.data)) {
+                // Filter active employees? Or all? Usually active.
+                const active = empRes.data.filter((e: any) => e.ativo);
+                setEmployees(active);
+            }
         } catch (e) {
-            console.error('Falha ao carregar config de delivery', e);
+            console.error('Falha ao carregar config/funcionarios', e);
         }
     })();
   }, []);
+
+  // Search Clients
+  useEffect(() => {
+      const delay = setTimeout(async () => {
+          if (searchClientQuery.length > 2) {
+              try {
+                  // Assuming customerService.getAll supports filtering or we store all?
+                  // Best practice: backend search. We added `?nome=` in customer.js
+                  const res = await api.get('/customer/list', { params: { nome: searchClientQuery } });
+                  if (res.data) setClients(res.data);
+              } catch (e) { console.error(e); }
+          } else {
+             // If query empty, maybe clear list or show recent?
+             if (searchClientQuery === '') setClients([]);
+          }
+      }, 500);
+      return () => clearTimeout(delay);
+  }, [searchClientQuery]);
 
   // Calculate Fee when distance changes
   useEffect(() => {
@@ -143,6 +181,8 @@ export default function SaleScreen() {
               // Por enquanto, se recarregar, o mapa pode ficar sem marker até o usuário buscar de novo ou se salvarmos lat/lng no sale (recomendado).
               // Mas o schema não tem lat/lng no Sale, só Address.
           }
+          if (sale.cliente) setSelectedCliente(sale.cliente);
+          if (sale.entregador) setSelectedEntregador(sale.entregador);
       }
   }, [sale]);
 
@@ -361,6 +401,44 @@ export default function SaleScreen() {
     }
   }, [vendaId]);
 
+  const handleSelectClient = async (client: any) => {
+      setSelectedCliente(client);
+      setShowClientModal(false);
+      
+      let newAddress = deliveryAddress;
+      // Auto-fill delivery address if empty and client has address
+      // Also if IS delivery mode or we want to prompt?
+      if (!deliveryAddress && client.endereco) {
+          const fullAddr = `${client.endereco}, ${client.numero || ''} - ${client.bairro || ''}, ${client.cidade || ''}`;
+          setDeliveryAddress(fullAddr);
+          newAddress = fullAddr;
+      }
+
+      if (sale && sale._id) {
+          try {
+              const res = await saleService.update(sale._id, { 
+                  clienteId: client.id, 
+                  deliveryAddress: newAddress 
+              });
+              setSale(res.data);
+          } catch (e) {
+              console.error('Erro ao atualizar cliente da venda', e);
+          }
+      }
+  };
+
+  const handleSelectEntregador = async (emp: any) => {
+      setSelectedEntregador(emp);
+      setShowEmployeeModal(false);
+      
+      if (sale && sale._id) {
+          try {
+              const res = await saleService.update(sale._id, { entregadorId: emp.id });
+              setSale(res.data);
+          } catch (e) { console.error('Erro ao atualizar entregador', e); }
+      }
+  };
+
   const createNewSale = useCallback(async () => {
     try {
       console.log('=== CRIANDO NOVA VENDA ===');
@@ -380,6 +458,8 @@ export default function SaleScreen() {
         tipoVenda: tipo || 'mesa',
         ...(mesaId && { mesa: mesaId }),
         status: 'aberta',
+        clienteId: selectedCliente?.id || null,
+        entregadorId: selectedEntregador?.id || null,
         itens: [],
         total: 0
       };
@@ -1063,13 +1143,60 @@ export default function SaleScreen() {
     );
   }
 
+  const renderFooter = () => (
+    <View style={{ paddingBottom: 100 }}>
+      {/* Botões de Ação no Final da Lista */}
+      {!isViewMode && cart.length > 0 && (
+        <View style={{ gap: 10, padding: 16 }}>
+             {/* Botão Delivery */}
+             <TouchableOpacity
+                style={{
+                    backgroundColor: isDelivery ? '#FF9800' : '#fff',
+                    padding: 16,
+                    borderRadius: 8,
+                    alignItems: 'center',
+                    borderWidth: 1,
+                    borderColor: '#FF9800',
+                    flexDirection: 'row',
+                    justifyContent: 'center',
+                    gap: 8
+                }}
+                onPress={() => setDeliveryModalVisible(true)}
+             >
+                <Ionicons name="bicycle" size={24} color={isDelivery ? '#fff' : '#FF9800'} />
+                <Text style={{ 
+                    color: isDelivery ? '#fff' : '#FF9800', 
+                    fontWeight: 'bold', 
+                    fontSize: 16 
+                }}>
+                    {isDelivery ? 'Configurar Entrega' : 'Vender como Delivery'}
+                </Text>
+             </TouchableOpacity>
+
+            {/* Botão Finalizar Balcão (se não for delivery) */}
+            {!isDelivery && (
+                <TouchableOpacity
+                style={[styles.finalizeButton, { margin: 0 }]}
+                onPress={() => setModalVisible(true)}
+                >
+                <Text style={styles.finalizeButtonText}>
+                    Finalizar Venda - R$ {totalRemaining.toFixed(2)}
+                </Text>
+                </TouchableOpacity>
+            )}
+        </View>
+      )}
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <ScreenIdentifier screenName="Nova Venda" />
       <View style={styles.header}>
         <TouchableOpacity 
           style={styles.backButton}
-          onPress={() => router.back()}
+          onPress={() => router.canGoBack() ? router.back() : router.replace('/')}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
@@ -1100,231 +1227,20 @@ export default function SaleScreen() {
         </View>
       </View>
 
-      <AddProductToTable
-        saleItems={isPhone ? [] : cart}
-        onAddProduct={addToCart}
-        onUpdateItem={(item, newQty) => { updateCartItem(item, newQty); }}
-        onRemoveItem={removeFromCart}
-        isViewMode={isViewMode}
-        hideSaleSection={isPhone}
-      />
+      <View style={{ flex: 1, overflow: 'hidden' }}>
+        <AddProductToTable
+          saleItems={isPhone ? [] : cart}
+          onAddProduct={addToCart}
+          onUpdateItem={(item, newQty) => { updateCartItem(item, newQty); }}
+          onRemoveItem={removeFromCart}
+          isViewMode={isViewMode}
+          hideSaleSection={isPhone}
+          ListFooterComponent={renderFooter()}
+        />
+      </View>
 
-      {/* Delivery Controls */}
-      {!isViewMode && (
-          <View style={styles.deliveryContainer}>
-            <View style={styles.deliveryHeader}>
-                <Text style={styles.deliveryTitle}>Modo Delivery</Text>
-                <Switch 
-                    value={isDelivery} 
-                    onValueChange={(v) => {
-                        setIsDelivery(v);
-                        if (!v) {
-                            setDeliveryFee(0);
-                            setDeliveryDistance(0);
-                        }
-                    }} 
-                />
-            </View>
-            
-            {isDelivery && (
-                <View style={styles.deliveryContent}>
-                    <Text style={styles.label}>Endereço do Cliente:</Text>
-                    {Platform.OS !== 'web' && (
-                        <View style={{ height: 44, marginBottom: 10, zIndex: 9999 }}>
-                            <GooglePlacesAutocomplete
-                                placeholder='Buscar endereço...'
-                                onPress={handlePlaceSelect}
-                                query={{
-                                    key: GOOGLE_API_KEY,
-                                    language: 'pt-BR',
-                                }}
-                                fetchDetails={true}
-                                styles={{
-                                    textInput: styles.placesInput,
-                                    listView: { zIndex: 10000, position: 'absolute', top: 40, width: '100%', backgroundColor: '#fff', borderWidth: 1, borderColor: '#ddd' }
-                                }}
-                                enablePoweredByContainer={false}
-                                textInputProps={{
-                                    value: deliveryAddress,
-                                    onChangeText: setDeliveryAddress
-                                }}
-                            />
-                        </View>
-                    )}
 
-                    {companyConfig?.latitude && companyConfig?.longitude && deliveryCoords && (
-                        <View style={styles.miniMap}>
-                             <MapView
-                                style={{ flex: 1 }}
-                                initialRegion={{
-                                    latitude: Number(companyConfig.latitude),
-                                    longitude: Number(companyConfig.longitude),
-                                    latitudeDelta: 0.05,
-                                    longitudeDelta: 0.05,
-                                }}
-                            >
-                                <Marker coordinate={{ latitude: Number(companyConfig.latitude), longitude: Number(companyConfig.longitude) }} title="Loja" pinColor="blue" />
-                                <Marker coordinate={{ latitude: deliveryCoords.lat, longitude: deliveryCoords.lng }} title="Cliente" />
-                                <Polyline 
-                                    coordinates={[
-                                        { latitude: Number(companyConfig.latitude), longitude: Number(companyConfig.longitude) },
-                                        { latitude: deliveryCoords.lat, longitude: deliveryCoords.lng }
-                                    ]}
-                                    strokeColor="#2196F3"
-                                    strokeWidth={3}
-                                />
-                            </MapView>
-                        </View>
-                    )}
 
-                     {/* Web Address Search Implementation */}
-                     {Platform.OS === 'web' && (
-                         <View style={{ marginTop: 15, padding: 15, backgroundColor: '#f8f9fa', borderRadius: 10, borderWidth: 1, borderColor: '#e9ecef' }}>
-                            <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#495057', marginBottom: 10 }}>📍 Calcular Entrega (Web)</Text>
-                            
-                            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
-                                <View style={{ flex: 1 }}>
-                                    <Text style={{ fontSize: 12, color: '#6c757d', marginBottom: 5 }}>Endereço Completo</Text>
-                                    <TextInput 
-                                       style={[styles.input, { backgroundColor: '#fff', height: 45, borderColor: '#ced4da' }]} 
-                                       placeholder="Ex: Av Paulista, 1000, São Paulo" 
-                                       placeholderTextColor="#adb5bd"
-                                       value={deliveryAddress}
-                                       onChangeText={setDeliveryAddress}
-                                       onSubmitEditing={async () => {
-                                            if (!deliveryAddress) return;
-                                            // Trigger search
-                                            try {
-                                                setLoading(true);
-                                                const query = encodeURIComponent(deliveryAddress);
-                                                const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${query}&key=${GOOGLE_API_KEY}&language=pt-BR`;
-                                                const res = await fetch(url);
-                                                const json = await res.json();
-                                                
-                                                if (json.status === 'OK' && json.results.length > 0) {
-                                                    const result = json.results[0];
-                                                    const location = result.geometry.location;
-                                                    const formatted = result.formatted_address;
-                                                    
-                                                    setDeliveryAddress(formatted);
-                                                    setDeliveryCoords({ lat: location.lat, lng: location.lng });
-                                                    
-                                                    // Trigger distance calc logic (copied from handlePlaceSelect logic)
-                                                    if (companyConfig?.latitude && companyConfig?.longitude) {
-                                                        const straightLine = calculateDistance(Number(companyConfig.latitude), Number(companyConfig.longitude), location.lat, location.lng);
-                                                        const estRoadDist = parseFloat((straightLine * 1.3).toFixed(2));
-                                                        setDeliveryDistance(estRoadDist);
-                                                    }
-                                                    Alert.alert('Endereço Encontrado', `Taxa calculada para: ${formatted}`);
-                                                } else {
-                                                    Alert.alert('Não encontrado', 'Verifique o endereço e tente novamente.');
-                                                }
-                                            } catch (e) {
-                                                Alert.alert('Erro', 'Falha ao buscar endereço.');
-                                            } finally {
-                                                setLoading(false);
-                                            }
-                                       }}
-                                    />
-                                </View>
-                                <TouchableOpacity 
-                                    style={{ 
-                                        backgroundColor: '#2196F3', 
-                                        justifyContent: 'center', 
-                                        alignItems: 'center', 
-                                        borderRadius: 8, 
-                                        paddingHorizontal: 20,
-                                        marginTop: 22,
-                                        height: 45
-                                    }}
-                                    onPress={async () => {
-                                        const safeAlert = (title: string, msg: string) => {
-                                            if (Platform.OS === 'web') {
-                                                // Pequeno delay para garantir rendering se necessário
-                                                setTimeout(() => window.alert(`${title}\n${msg}`), 50);
-                                            } else {
-                                                Alert.alert(title, msg);
-                                            }
-                                        };
-
-                                        
-                                        if (!deliveryAddress) {
-                                            safeAlert('Atenção', 'Digite um endereço para buscar.');
-                                            return;
-                                        }
-
-                                        if (!companyConfig?.latitude || !companyConfig?.longitude) {
-                                            safeAlert('Configuração Pendente', 'O endereço da loja não está configurado. Vá em Configurações > Delivery e salve a localização da loja.');
-                                            return;
-                                        }
-
-                                        // Removida verificação de GOOGLE_API_KEY pois usaremos OpenStreetMap
-                                        // if (!GOOGLE_API_KEY) { ... }
-
-                                        try {
-                                            setLoading(true);
-                                            
-                                            // Usando Nominatim (OpenStreetMap)
-                                            const query = encodeURIComponent(deliveryAddress);
-                                            // limit=1 para pegar o melhor resultado
-                                            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1`;
-                                            
-                                            const res = await fetch(url, {
-                                                headers: {
-                                                    'User-Agent': 'BarApp/1.0'
-                                                }
-                                            });
-                                            const json = await res.json();
-                                            
-                                            if (Array.isArray(json) && json.length > 0) {
-                                                const result = json[0];
-                                                const lat = parseFloat(result.lat);
-                                                const lon = parseFloat(result.lon);
-                                                const formatted = result.display_name;
-                                                
-                                                setDeliveryAddress(formatted);
-                                                setDeliveryCoords({ lat, lng: lon });
-                                                
-                                                const straightLine = calculateDistance(Number(companyConfig.latitude), Number(companyConfig.longitude), lat, lon);
-                                                const estRoadDist = parseFloat((straightLine * 1.3).toFixed(2));
-                                                setDeliveryDistance(estRoadDist);
-                                            } else {
-                                                safeAlert('Não encontrado', 'Endereço não localizado no OpenStreetMap. Tente adicionar cidade e estado.');
-                                            }
-                                        } catch (e: any) {
-                                            safeAlert('Erro de Rede', `Falha ao conectar com serviço de mapas: ${e.message}`);
-                                        } finally {
-                                            setLoading(false);
-                                        }
-                                    }}
-                                >
-                                    <Text style={{ color: '#fff', fontWeight: 'bold' }}>Buscar e Calcular</Text>
-                                </TouchableOpacity>
-                            </View>
-
-                            {/* Hidden/Debug Coordinates - Only show if debug needed or verify */}
-                            {deliveryCoords && (
-                                <Text style={{ fontSize: 10, color: '#adb5bd', textAlign: 'right' }}>
-                                    Lat: {deliveryCoords.lat.toFixed(5)}, Lng: {deliveryCoords.lng.toFixed(5)}
-                                </Text>
-                            )}
-                         </View>
-                     )}
-
-                    <View style={styles.deliveryInfoRow}>
-                        <View style={styles.infoBox}>
-                            <Text style={styles.infoLabel}>Distância Est.</Text>
-                            <Text style={styles.infoValue}>{deliveryDistance.toFixed(2)} km</Text>
-                        </View>
-                        <View style={styles.infoBox}>
-                            <Text style={styles.infoLabel}>Taxa Entrega</Text>
-                            <Text style={styles.infoValue}>R$ {deliveryFee.toFixed(2)}</Text>
-                        </View>
-                    </View>
-                </View>
-            )}
-          </View>
-      )}
 
       {isPhone && (
         <SaleItemsModal
@@ -1373,22 +1289,92 @@ export default function SaleScreen() {
         onSelectSize={handleSizeSelect}
       />
 
-      {!isViewMode && cart.length > 0 && (
-        <TouchableOpacity
-          style={[styles.finalizeButton, cart.length === 0 && styles.finalizeButtonDisabled]}
-          onPress={() => {
-            console.log('🔥 BOTÃO FINALIZAR CLICADO!');
-            console.log('📊 Estado do carrinho:', cart.length);
-            console.log('💰 Total:', totalRemaining);
-            setModalVisible(true);
-          }}
-          disabled={cart.length === 0}
-        >
-          <Text style={styles.finalizeButtonText}>
-            Finalizar Venda - R$ {totalRemaining.toFixed(2)}
-          </Text>
-        </TouchableOpacity>
-      )}
+       <DeliveryDetailsModal
+            visible={deliveryModalVisible}
+            onClose={() => setDeliveryModalVisible(false)}
+            isDelivery={isDelivery}
+            setIsDelivery={setIsDelivery}
+            deliveryAddress={deliveryAddress}
+            setDeliveryAddress={setDeliveryAddress}
+            deliveryDistance={deliveryDistance}
+            setDeliveryDistance={setDeliveryDistance}
+            deliveryFee={deliveryFee}
+            setDeliveryFee={setDeliveryFee}
+            deliveryCoords={deliveryCoords}
+            setDeliveryCoords={setDeliveryCoords}
+            companyConfig={companyConfig}
+            selectedCliente={selectedCliente}
+            onSelectClient={() => setShowClientModal(true)}
+            selectedEntregador={selectedEntregador}
+            onSelectEntregador={() => setShowEmployeeModal(true)}
+            user={user}
+            loading={loading}
+            GOOGLE_API_KEY={GOOGLE_API_KEY}
+            onConfirm={async () => {
+                // Copied updated logic with recovery
+                if(!deliveryAddress) { 
+                    Platform.OS === 'web' ? window.alert('Endereço obrigatório') : Alert.alert('Erro', 'Endereço obrigatório'); 
+                    return; 
+                }
+                
+                try {
+                    setLoading(true);
+                    
+                    let currentSaleId = sale?._id;
+
+                    // Auto-recovery
+                    if (!currentSaleId && cart.length > 0) {
+                        try {
+                            const createRes = await saleService.create({ type: 'balcao' });
+                            if (createRes.data && createRes.data._id) {
+                                currentSaleId = createRes.data._id;
+                                for (const item of cart) {
+                                    const pId = item.productId || (item.produto && (item.produto._id || item.produto.id));
+                                    if (pId) {
+                                        await saleService.addItem(currentSaleId, {
+                                            produtoId: parseInt(String(pId), 10),
+                                            quantidade: item.quantidade
+                                        });
+                                    }
+                                }
+                            }
+                        } catch (syncErr) { console.error(syncErr); }
+                    }
+
+                    if (!currentSaleId) {
+                        Platform.OS === 'web' ? window.alert('Erro: Venda não inicializada') : Alert.alert('Erro', 'Venda não inicializada');
+                        setLoading(false);
+                        return;
+                    }
+
+                    await saleService.update(currentSaleId, {
+                        isDelivery: true,
+                        deliveryAddress,
+                        deliveryDistance: Number(deliveryDistance),
+                        deliveryFee: Number(deliveryFee),
+                        clienteId: selectedCliente?.id,
+                        entregadorId: selectedEntregador?.id,
+                        deliveryStatus: 'pending' 
+                    });
+                    
+                    await api.post(`/sale/${currentSaleId}/delivery-print`);
+                    
+                    if (Platform.OS === 'web') window.alert('Entrega lançada!');
+                    else Alert.alert('Sucesso', 'Entrega lançada!');
+                    
+                    setDeliveryModalVisible(false);
+                    router.replace('/delivery-dashboard'); 
+                } catch(e: any) {
+                    const msg = e.response?.data?.message || e.message || 'Erro desconhecido';
+                    console.error('Launch Error:', e);
+                    Platform.OS === 'web' ? window.alert('Erro: ' + msg) : Alert.alert('Erro', msg);
+                } finally {
+                    setLoading(false);
+                }
+            }}
+        />
+
+
 
       <Modal
         visible={modalVisible}
@@ -1515,6 +1501,84 @@ export default function SaleScreen() {
            }
         }}
       />
+      <Modal
+          visible={showClientModal}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowClientModal(false)}
+      >
+          <View style={styles.modalOverlay}>
+              <View style={[styles.modalContent, { height: '80%' }]}>
+                  <Text style={styles.modalTitle}>Selecionar Cliente</Text>
+                  <TextInput
+                      style={[styles.placesInput, { marginBottom: 10 }]}
+                      placeholder="Buscar por nome..."
+                      value={searchClientQuery}
+                      onChangeText={setSearchClientQuery}
+                  />
+                  {clients.length === 0 && searchClientQuery.length > 2 && (
+                       <TouchableOpacity style={{ padding: 10, backgroundColor: '#e3f2fd', borderRadius: 6, marginBottom: 10 }}
+                           onPress={async () => {
+                               // Quick register
+                               // Ask for phone?
+                               try {
+                                   const res = await customerService.create({ nome: searchClientQuery, fone: '' });
+                                   if (res.data) {
+                                       setClients([res.data]);
+                                       handleSelectClient(res.data);
+                                   }
+                               } catch (e) {
+                                   Alert.alert('Erro', 'Falha ao cadastrar cliente rápido');
+                               }
+                           }}
+                       >
+                           <Text style={{ color: '#2196F3', textAlign: 'center' }}>Cadastrar "{searchClientQuery}"</Text>
+                       </TouchableOpacity>
+                  )}
+                  <ScrollView>
+                      {clients.map(c => (
+                          <TouchableOpacity key={c.id || c._id} 
+                              style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: '#eee' }}
+                              onPress={() => handleSelectClient(c)}
+                          >
+                              <Text style={{ fontSize: 16, fontWeight: 'bold' }}>{c.nome}</Text>
+                              {c.endereco && <Text style={{ fontSize: 12, color: '#666' }}>{c.endereco}</Text>}
+                          </TouchableOpacity>
+                      ))}
+                  </ScrollView>
+                  <TouchableOpacity style={[styles.modalButton, styles.cancelButton, { marginTop: 10 }]} onPress={() => setShowClientModal(false)}>
+                      <Text style={styles.cancelButtonText}>Fechar</Text>
+                  </TouchableOpacity>
+              </View>
+          </View>
+      </Modal>
+
+      <Modal
+          visible={showEmployeeModal}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowEmployeeModal(false)}
+      >
+          <View style={styles.modalOverlay}>
+              <View style={[styles.modalContent, { height: '60%' }]}>
+                  <Text style={styles.modalTitle}>Selecionar Entregador</Text>
+                  <ScrollView>
+                      {employees.map(e => (
+                          <TouchableOpacity key={e.id || e._id} 
+                              style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: '#eee' }}
+                              onPress={() => handleSelectEntregador(e)}
+                          >
+                              <Text style={{ fontSize: 16, fontWeight: 'bold' }}>{e.nome}</Text>
+                          </TouchableOpacity>
+                      ))}
+                  </ScrollView>
+                  <TouchableOpacity style={[styles.modalButton, styles.cancelButton, { marginTop: 10 }]} onPress={() => setShowEmployeeModal(false)}>
+                      <Text style={styles.cancelButtonText}>Fechar</Text>
+                  </TouchableOpacity>
+              </View>
+          </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -1736,5 +1800,13 @@ const styles = StyleSheet.create({
   },
   infoLabel: { fontSize: 12, color: '#1976D2' },
   infoValue: { fontSize: 16, fontWeight: 'bold', color: '#1565C0' },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 6,
+    padding: 10,
+    fontSize: 16,
+    backgroundColor: '#fff',
+  },
 });
 

@@ -100,13 +100,14 @@ model Employee {
   vendasAbertura    Sale[]     @relation("SaleFuncionarioAbertura")
   vendasFuncionario Sale[]     @relation("SaleFuncionario")
   vendasResponsavel Sale[]     @relation("SaleResponsavel")
+  vendasEntregues   Sale[]     @relation("SaleEntregador")
   saleItemsPrepared SaleItem[] @relation("SaleItemPreparedBy")
 }
 
 model Customer {
   id             Int       @id @default(autoincrement())
   nome           String?
-  endereco       String?
+  endereco       String?        @db.Text
   cidade         String?
   estado         String?
   fone           String?
@@ -193,9 +194,9 @@ model PrintJob {
   productId   Int
   setorId     Int
   printerId   Int?
-  content     String
+  content     String         @db.Text
   status      PrintJobStatus @default(queued)
-  error       String?
+  error       String?        @db.Text
   createdAt   DateTime       @default(now())
   processedAt DateTime?
 }
@@ -204,9 +205,9 @@ model WhatsAppMessageLog {
   id        Int         @id @default(autoincrement())
   saleId    Int?
   destino   String
-  content   String
+  content   String      @db.Text
   status    WhatsStatus @default(queued)
-  error     String?
+  error     String?     @db.Text
   createdAt DateTime    @default(now())
   sentAt    DateTime?
 }
@@ -238,7 +239,9 @@ model Sale {
   responsavelFuncionarioId Int?
   funcionarioNome          String?
   funcionarioAberturaNome  String?
+
   funcionarioAberturaId    Int?
+  entregadorId             Int?
   numeroComanda            String?        @unique
   nomeComanda              String?
   tipoVenda                TipoVenda      @default(balcao)
@@ -260,13 +263,14 @@ model Sale {
   cliente                  Customer?      @relation("SaleCliente", fields: [clienteId], references: [id])
   funcionarioAbertura      Employee?      @relation("SaleFuncionarioAbertura", fields: [funcionarioAberturaId], references: [id])
   funcionario              Employee?      @relation("SaleFuncionario", fields: [funcionarioId], references: [id])
+  entregador               Employee?      @relation("SaleEntregador", fields: [entregadorId], references: [id])
   mesa                     Mesa?          @relation("SaleMesa", fields: [mesaId], references: [id])
   responsavelFuncionario   Employee?      @relation("SaleResponsavel", fields: [responsavelFuncionarioId], references: [id])
   itens                    SaleItem[]
 
   // Delivery Fields
   isDelivery               Boolean        @default(false)
-  deliveryAddress          String?
+  deliveryAddress          String?        @db.Text
   deliveryDistance         Float?         // em km
   deliveryFee              Decimal?       @db.Decimal(10, 2)
   deliveryStatus           DeliveryStatus? @default(pending)
@@ -277,6 +281,7 @@ model Sale {
   @@index([funcionarioId], map: "Sale_funcionarioId_fkey")
   @@index([mesaId], map: "Sale_mesaId_fkey")
   @@index([responsavelFuncionarioId], map: "Sale_responsavelFuncionarioId_fkey")
+  @@index([entregadorId], map: "Sale_entregadorId_fkey")
 }
 
 model SaleItem {

@@ -38,8 +38,15 @@ router.post("/create", async (req, res) => {
 // Rota para listar todos os clientes
 router.get("/list", async (req, res) => {
   try {
+    const { nome } = req.query;
+    const where = {};
+    if (nome) {
+      where.nome = { contains: String(nome) }; // Removed mode: 'insensitive' for MySQL compatibility if needed, or check if supported. Prisma default for MySQL is case insensitive usually depending on collation.
+    }
     const customers = await prisma.customer.findMany({
+      where,
       orderBy: { dataInclusao: "desc" },
+      take: 20
     });
     res.json(customers);
   } catch (error) {
