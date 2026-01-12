@@ -207,6 +207,20 @@ export default function HomeScreen() {
       color: '#607D8B',
       onPress: () => router.push('/(tabs)/admin-relatorios'),
     },
+    {
+      title: 'Entrega / Delivery',
+      subtitle: 'Dashboard de Entregas',
+      icon: 'bicycle',
+      color: '#009688',
+      onPress: () => router.push('/delivery-dashboard'),
+    },
+    {
+      title: 'Configurações',
+      subtitle: 'Ajustes e Delivery',
+      icon: 'settings-sharp',
+      color: '#607D8B',
+      onPress: () => router.push('/configuracoes'),
+    },
   ];
 
   return (

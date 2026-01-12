@@ -629,7 +629,7 @@ export const caixaService = {
 export const companyService = {
   get: () => api.get('/company'),
   save: (data) => api.post('/company', data),
-  update: (data) => api.put('/company', data),
+  update: (data) => api.post('/company', data),
 };
 
 export const userService = {

@@ -264,6 +264,14 @@ model Sale {
   responsavelFuncionario   Employee?      @relation("SaleResponsavel", fields: [responsavelFuncionarioId], references: [id])
   itens                    SaleItem[]
 
+  // Delivery Fields
+  isDelivery               Boolean        @default(false)
+  deliveryAddress          String?
+  deliveryDistance         Float?         // em km
+  deliveryFee              Decimal?       @db.Decimal(10, 2)
+  deliveryStatus           DeliveryStatus? @default(pending)
+
+
   @@index([clienteId], map: "Sale_clienteId_fkey")
   @@index([funcionarioAberturaId], map: "Sale_funcionarioAberturaId_fkey")
   @@index([funcionarioId], map: "Sale_funcionarioId_fkey")
@@ -484,6 +492,28 @@ model Company {
   observacoes       String?   @db.Text
   
   updatedAt         DateTime  @updatedAt
+
+  // Delivery Config
+  latitude          Float?
+  longitude         Float?
+  deliveryRadius    Float?    // em km
+  deliveryRanges    DeliveryRange[]
+}
+
+model DeliveryRange {
+  id        Int      @id @default(autoincrement())
+  minDist   Float    // km
+  maxDist   Float    // km
+  price     Decimal  @db.Decimal(10, 2)
+  companyId Int
+  company   Company  @relation(fields: [companyId], references: [id])
+}
+
+enum DeliveryStatus {
+  pending
+  out_for_delivery
+  delivered
+  cancelled
 }
 
 enum RegimeTributario {

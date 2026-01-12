@@ -27,6 +27,11 @@ export interface Sale {
   observacoes?: string;
   total: number;
   caixaVendas?: any[];
+  isDelivery?: boolean;
+  deliveryAddress?: string;
+  deliveryDistance?: number;
+  deliveryFee?: number;
+  deliveryStatus?: string;
 }
 
 export interface Product {

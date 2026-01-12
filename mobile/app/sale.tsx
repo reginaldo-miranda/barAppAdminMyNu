@@ -11,11 +11,18 @@ import {
   SafeAreaView,
   Dimensions,
   Platform,
-  Linking
+
+  Linking,
+  Switch,
+  ScrollView,
+  TextInput
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { saleService, mesaService, comandaService, getWsUrl, authService, API_URL } from '../src/services/api';
+import MapView, { Marker, Polyline } from '../src/components/NativeMaps';
+import { GooglePlacesAutocomplete } from '../src/components/GooglePlacesAutocompleteWrapper';
+import Constants from 'expo-constants';
+import api, { saleService, mesaService, comandaService, getWsUrl, authService, API_URL, companyService } from '../src/services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../src/services/storage';
 import AddProductToTable from '../src/components/AddProductToTable';
@@ -58,6 +65,18 @@ export default function SaleScreen() {
 
   const [splitModalVisible, setSplitModalVisible] = useState(false);
 
+  // Delivery States
+  const [isDelivery, setIsDelivery] = useState(false);
+  const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [deliveryCoords, setDeliveryCoords] = useState<{lat: number, lng: number} | null>(null);
+  const [deliveryDistance, setDeliveryDistance] = useState(0);
+  const [deliveryFee, setDeliveryFee] = useState(0);
+  const [companyConfig, setCompanyConfig] = useState<any>(null);
+  const [showDeliveryMap, setShowDeliveryMap] = useState(false);
+
+  // API Key for Maps
+  const GOOGLE_API_KEY = Constants.expoConfig?.android?.config?.googleMaps?.apiKey || Constants.expoConfig?.ios?.config?.googleMapsApiKey || '';
+
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -71,7 +90,94 @@ export default function SaleScreen() {
       } catch {}
     })();
     return () => { mounted = false; };
+    return () => { mounted = false; };
   }, []);
+
+  // Load Company Config for Delivery
+  useEffect(() => {
+    (async () => {
+        try {
+            const res = await companyService.get();
+            if (res.data) {
+                setCompanyConfig(res.data);
+            }
+        } catch (e) {
+            console.error('Falha ao carregar config de delivery', e);
+        }
+    })();
+  }, []);
+
+  // Calculate Fee when distance changes
+  useEffect(() => {
+    if (deliveryDistance > 0 && companyConfig && Array.isArray(companyConfig.deliveryRanges)) {
+        const ranges = companyConfig.deliveryRanges;
+        // Encontrar faixa
+        const match = ranges.find((r: any) => deliveryDistance >= Number(r.minDist) && deliveryDistance <= Number(r.maxDist));
+        if (match) {
+            setDeliveryFee(Number(match.price));
+        } else {
+            // Se exceder o máximo, pode cobrar o da maior faixa ou bloquear. 
+            // Vamos assumir a maior faixa ou zero se não houver match.
+            // Opcional: Avisar se fora do raio.
+             if (companyConfig.deliveryRadius && deliveryDistance > Number(companyConfig.deliveryRadius)) {
+                 // Fora do raio
+                 // Alert.alert('Aviso', 'Distância excede o raio de entrega da loja.');
+             }
+             // Tentar pegar o ultimo?
+             // setDeliveryFee(0);
+        }
+    }
+  }, [deliveryDistance, companyConfig]);
+
+  // Load existing delivery data from sale
+  useEffect(() => {
+      if (sale) {
+          if (sale.isDelivery) {
+              setIsDelivery(true);
+              // Se tiver endereço salvo, preencher (mas google autocomplete é chato de preencher reverso sem ref manual,
+              // vamos confiar que o usuario vê o endereço no texto ou mapa)
+              setDeliveryAddress(sale.deliveryAddress || '');
+              setDeliveryDistance(Number(sale.deliveryDistance || 0));
+              setDeliveryFee(Number(sale.deliveryFee || 0));
+              // Coords não salvamos no sale (apenas endereço e distancia), mas poderíamos. 
+              // Por enquanto, se recarregar, o mapa pode ficar sem marker até o usuário buscar de novo ou se salvarmos lat/lng no sale (recomendado).
+              // Mas o schema não tem lat/lng no Sale, só Address.
+          }
+      }
+  }, [sale]);
+
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+      const R = 6371; // Radius of the earth in km
+      const dLat = deg2rad(lat2 - lat1); 
+      const dLon = deg2rad(lon2 - lon1); 
+      const a = 
+        Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
+        Math.sin(dLon/2) * Math.sin(dLon/2)
+        ; 
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+      const d = R * c; // Distance in km
+      return d;
+  };
+
+  const deg2rad = (deg: number) => {
+    return deg * (Math.PI/180);
+  };
+
+  const handlePlaceSelect = (data: any, details: any = null) => {
+      if (details && companyConfig?.latitude && companyConfig?.longitude) {
+          const { lat, lng } = details.geometry.location;
+          setDeliveryCoords({ lat, lng });
+          setDeliveryAddress(data.description || details.formatted_address);
+          setShowDeliveryMap(true);
+
+          // Calcular distância (Haversine simples por enquanto)
+          // O ideal seria Google Distance Matrix, mas Haversine * 1.3 é uma boa estimativa urbana
+          const straightLine = calculateDistance(Number(companyConfig.latitude), Number(companyConfig.longitude), lat, lng);
+          const estRoadDist = parseFloat((straightLine * 1.3).toFixed(2)); // Fator de correção de rota
+          setDeliveryDistance(estRoadDist);
+      }
+  };
 
   useEffect(() => {
     const w = Dimensions.get('window').width;
@@ -803,6 +909,73 @@ export default function SaleScreen() {
       return;
     }
 
+    // Validação Delivery
+    if (isDelivery) {
+        if (!deliveryAddress) {
+            Alert.alert('Erro', 'Informe o endereço de entrega para Delivery.');
+            return;
+        }
+        // Atualizar dados de delivery na venda antes de qualquer coisa
+        try {
+            setFinalizing(true);
+            const deliveryPayload = {
+                isDelivery: true,
+                deliveryAddress,
+                deliveryDistance,
+                deliveryFee,
+                deliveryStatus: 'pending'
+            };
+            
+            // Usar endpoint especifico ou sale update? 
+            // Sale update geral não exposto facil, mas criamos PUT /:id/delivery
+            // Mas precisamos chamar via axios direto se nao tiver no service?
+            // Adicionamos no sale.js backend. Vamos chamar via api.put
+            // Melhor: Adicionei ao sale.js mas preciso chamar.
+            // Vou usar axios direto por brevidade ou criar no service?
+             // Service não tem `updateDelivery`. Vou usar `api.put`.
+             await api.put(`/sale/${sale._id}/delivery`, deliveryPayload);
+             
+             // If delivery, we DO NOT finalize (close) the sale in the sense of closing connection,
+             
+             // If delivery, we DO NOT finalize (close) the sale in the sense of closing connection, 
+             // but we might want to "Confirmar Entrega" later.
+             // The button said "Finalizar Venda".
+             // If Delivery: "Despachar" or "Salvar para Entrega".
+             // Let's just Save and Go Back.
+             
+             // Actually, `isDelivery` changes the flow.
+             // If `isDelivery`, `finalizeSale` is strictly "Update Delivery Info".
+             // The user can then "Confirm Delivery" later from another screen.
+             // So I will update delivery info and return.
+             
+        } catch (e) {
+            console.error('Erro ao salvar delivery', e);
+            Alert.alert('Erro', 'Falha ao salvar dados de delivery.');
+            setFinalizing(false);
+            return;
+        }
+    }
+
+    if (isDelivery) {
+        // Enviar atualização de delivery e sair
+         try {
+             await api.put(`/sale/${sale._id}/delivery`, {
+                isDelivery: true,
+                deliveryAddress,
+                deliveryDistance,
+                deliveryFee,
+                deliveryStatus: 'pending'
+            });
+            Alert.alert('Sucesso', 'Venda configurada para entrega!');
+            router.back();
+            return;
+         } catch (e) {
+             Alert.alert('Erro', 'Falha ao salvar delivery.');
+             setFinalizing(false);
+             return;
+         }
+    }
+
     try {
       setFinalizing(true);
       const total = cart.reduce((sum, item) => sum + item.subtotal, 0);
@@ -935,6 +1108,223 @@ export default function SaleScreen() {
         isViewMode={isViewMode}
         hideSaleSection={isPhone}
       />
+
+      {/* Delivery Controls */}
+      {!isViewMode && (
+          <View style={styles.deliveryContainer}>
+            <View style={styles.deliveryHeader}>
+                <Text style={styles.deliveryTitle}>Modo Delivery</Text>
+                <Switch 
+                    value={isDelivery} 
+                    onValueChange={(v) => {
+                        setIsDelivery(v);
+                        if (!v) {
+                            setDeliveryFee(0);
+                            setDeliveryDistance(0);
+                        }
+                    }} 
+                />
+            </View>
+            
+            {isDelivery && (
+                <View style={styles.deliveryContent}>
+                    <Text style={styles.label}>Endereço do Cliente:</Text>
+                    {Platform.OS !== 'web' && (
+                        <View style={{ height: 44, marginBottom: 10, zIndex: 9999 }}>
+                            <GooglePlacesAutocomplete
+                                placeholder='Buscar endereço...'
+                                onPress={handlePlaceSelect}
+                                query={{
+                                    key: GOOGLE_API_KEY,
+                                    language: 'pt-BR',
+                                }}
+                                fetchDetails={true}
+                                styles={{
+                                    textInput: styles.placesInput,
+                                    listView: { zIndex: 10000, position: 'absolute', top: 40, width: '100%', backgroundColor: '#fff', borderWidth: 1, borderColor: '#ddd' }
+                                }}
+                                enablePoweredByContainer={false}
+                                textInputProps={{
+                                    value: deliveryAddress,
+                                    onChangeText: setDeliveryAddress
+                                }}
+                            />
+                        </View>
+                    )}
+
+                    {companyConfig?.latitude && companyConfig?.longitude && deliveryCoords && (
+                        <View style={styles.miniMap}>
+                             <MapView
+                                style={{ flex: 1 }}
+                                initialRegion={{
+                                    latitude: Number(companyConfig.latitude),
+                                    longitude: Number(companyConfig.longitude),
+                                    latitudeDelta: 0.05,
+                                    longitudeDelta: 0.05,
+                                }}
+                            >
+                                <Marker coordinate={{ latitude: Number(companyConfig.latitude), longitude: Number(companyConfig.longitude) }} title="Loja" pinColor="blue" />
+                                <Marker coordinate={{ latitude: deliveryCoords.lat, longitude: deliveryCoords.lng }} title="Cliente" />
+                                <Polyline 
+                                    coordinates={[
+                                        { latitude: Number(companyConfig.latitude), longitude: Number(companyConfig.longitude) },
+                                        { latitude: deliveryCoords.lat, longitude: deliveryCoords.lng }
+                                    ]}
+                                    strokeColor="#2196F3"
+                                    strokeWidth={3}
+                                />
+                            </MapView>
+                        </View>
+                    )}
+
+                     {/* Web Address Search Implementation */}
+                     {Platform.OS === 'web' && (
+                         <View style={{ marginTop: 15, padding: 15, backgroundColor: '#f8f9fa', borderRadius: 10, borderWidth: 1, borderColor: '#e9ecef' }}>
+                            <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#495057', marginBottom: 10 }}>📍 Calcular Entrega (Web)</Text>
+                            
+                            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={{ fontSize: 12, color: '#6c757d', marginBottom: 5 }}>Endereço Completo</Text>
+                                    <TextInput 
+                                       style={[styles.input, { backgroundColor: '#fff', height: 45, borderColor: '#ced4da' }]} 
+                                       placeholder="Ex: Av Paulista, 1000, São Paulo" 
+                                       placeholderTextColor="#adb5bd"
+                                       value={deliveryAddress}
+                                       onChangeText={setDeliveryAddress}
+                                       onSubmitEditing={async () => {
+                                            if (!deliveryAddress) return;
+                                            // Trigger search
+                                            try {
+                                                setLoading(true);
+                                                const query = encodeURIComponent(deliveryAddress);
+                                                const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${query}&key=${GOOGLE_API_KEY}&language=pt-BR`;
+                                                const res = await fetch(url);
+                                                const json = await res.json();
+                                                
+                                                if (json.status === 'OK' && json.results.length > 0) {
+                                                    const result = json.results[0];
+                                                    const location = result.geometry.location;
+                                                    const formatted = result.formatted_address;
+                                                    
+                                                    setDeliveryAddress(formatted);
+                                                    setDeliveryCoords({ lat: location.lat, lng: location.lng });
+                                                    
+                                                    // Trigger distance calc logic (copied from handlePlaceSelect logic)
+                                                    if (companyConfig?.latitude && companyConfig?.longitude) {
+                                                        const straightLine = calculateDistance(Number(companyConfig.latitude), Number(companyConfig.longitude), location.lat, location.lng);
+                                                        const estRoadDist = parseFloat((straightLine * 1.3).toFixed(2));
+                                                        setDeliveryDistance(estRoadDist);
+                                                    }
+                                                    Alert.alert('Endereço Encontrado', `Taxa calculada para: ${formatted}`);
+                                                } else {
+                                                    Alert.alert('Não encontrado', 'Verifique o endereço e tente novamente.');
+                                                }
+                                            } catch (e) {
+                                                Alert.alert('Erro', 'Falha ao buscar endereço.');
+                                            } finally {
+                                                setLoading(false);
+                                            }
+                                       }}
+                                    />
+                                </View>
+                                <TouchableOpacity 
+                                    style={{ 
+                                        backgroundColor: '#2196F3', 
+                                        justifyContent: 'center', 
+                                        alignItems: 'center', 
+                                        borderRadius: 8, 
+                                        paddingHorizontal: 20,
+                                        marginTop: 22,
+                                        height: 45
+                                    }}
+                                    onPress={async () => {
+                                        const safeAlert = (title: string, msg: string) => {
+                                            if (Platform.OS === 'web') {
+                                                // Pequeno delay para garantir rendering se necessário
+                                                setTimeout(() => window.alert(`${title}\n${msg}`), 50);
+                                            } else {
+                                                Alert.alert(title, msg);
+                                            }
+                                        };
+
+                                        
+                                        if (!deliveryAddress) {
+                                            safeAlert('Atenção', 'Digite um endereço para buscar.');
+                                            return;
+                                        }
+
+                                        if (!companyConfig?.latitude || !companyConfig?.longitude) {
+                                            safeAlert('Configuração Pendente', 'O endereço da loja não está configurado. Vá em Configurações > Delivery e salve a localização da loja.');
+                                            return;
+                                        }
+
+                                        // Removida verificação de GOOGLE_API_KEY pois usaremos OpenStreetMap
+                                        // if (!GOOGLE_API_KEY) { ... }
+
+                                        try {
+                                            setLoading(true);
+                                            
+                                            // Usando Nominatim (OpenStreetMap)
+                                            const query = encodeURIComponent(deliveryAddress);
+                                            // limit=1 para pegar o melhor resultado
+                                            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1`;
+                                            
+                                            const res = await fetch(url, {
+                                                headers: {
+                                                    'User-Agent': 'BarApp/1.0'
+                                                }
+                                            });
+                                            const json = await res.json();
+                                            
+                                            if (Array.isArray(json) && json.length > 0) {
+                                                const result = json[0];
+                                                const lat = parseFloat(result.lat);
+                                                const lon = parseFloat(result.lon);
+                                                const formatted = result.display_name;
+                                                
+                                                setDeliveryAddress(formatted);
+                                                setDeliveryCoords({ lat, lng: lon });
+                                                
+                                                const straightLine = calculateDistance(Number(companyConfig.latitude), Number(companyConfig.longitude), lat, lon);
+                                                const estRoadDist = parseFloat((straightLine * 1.3).toFixed(2));
+                                                setDeliveryDistance(estRoadDist);
+                                            } else {
+                                                safeAlert('Não encontrado', 'Endereço não localizado no OpenStreetMap. Tente adicionar cidade e estado.');
+                                            }
+                                        } catch (e: any) {
+                                            safeAlert('Erro de Rede', `Falha ao conectar com serviço de mapas: ${e.message}`);
+                                        } finally {
+                                            setLoading(false);
+                                        }
+                                    }}
+                                >
+                                    <Text style={{ color: '#fff', fontWeight: 'bold' }}>Buscar e Calcular</Text>
+                                </TouchableOpacity>
+                            </View>
+
+                            {/* Hidden/Debug Coordinates - Only show if debug needed or verify */}
+                            {deliveryCoords && (
+                                <Text style={{ fontSize: 10, color: '#adb5bd', textAlign: 'right' }}>
+                                    Lat: {deliveryCoords.lat.toFixed(5)}, Lng: {deliveryCoords.lng.toFixed(5)}
+                                </Text>
+                            )}
+                         </View>
+                     )}
+
+                    <View style={styles.deliveryInfoRow}>
+                        <View style={styles.infoBox}>
+                            <Text style={styles.infoLabel}>Distância Est.</Text>
+                            <Text style={styles.infoValue}>{deliveryDistance.toFixed(2)} km</Text>
+                        </View>
+                        <View style={styles.infoBox}>
+                            <Text style={styles.infoLabel}>Taxa Entrega</Text>
+                            <Text style={styles.infoValue}>R$ {deliveryFee.toFixed(2)}</Text>
+                        </View>
+                    </View>
+                </View>
+            )}
+          </View>
+      )}
 
       {isPhone && (
         <SaleItemsModal
@@ -1298,5 +1688,53 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+
+  deliveryContainer: {
+      backgroundColor: '#fff',
+      margin: 16,
+      marginTop: 0,
+      padding: 16,
+      borderRadius: 8,
+      elevation: 2,
+      zIndex: 9000
+  },
+  deliveryHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 0
+  },
+  deliveryTitle: { fontSize: 16, fontWeight: 'bold', color: '#333' },
+  deliveryContent: { marginTop: 16 },
+  label: { fontSize: 14, color: '#666', marginBottom: 4 },
+  placesInput: {
+      borderWidth: 1,
+      borderColor: '#ddd',
+      borderRadius: 6,
+      height: 40,
+      paddingHorizontal: 10,
+      backgroundColor: '#f9f9f9'
+  },
+  miniMap: {
+      height: 150,
+      borderRadius: 8,
+      overflow: 'hidden',
+      marginTop: 10,
+      backgroundColor: '#eee'
+  },
+  deliveryInfoRow: {
+      flexDirection: 'row',
+      gap: 16,
+      marginTop: 12
+  },
+  infoBox: {
+      flex: 1,
+      backgroundColor: '#E3F2FD',
+      padding: 10,
+      borderRadius: 6,
+      alignItems: 'center'
+  },
+  infoLabel: { fontSize: 12, color: '#1976D2' },
+  infoValue: { fontSize: 16, fontWeight: 'bold', color: '#1565C0' },
 });
 

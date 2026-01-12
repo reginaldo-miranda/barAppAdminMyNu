@@ -12,6 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import ScreenIdentifier from '../src/components/ScreenIdentifier';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS, getSecureItem, setSecureItem } from '../src/services/storage';
@@ -20,6 +21,7 @@ import { scanWifiNetworks, connectToWifi, isWifiConnectionRealPossible } from '.
 import { SafeIcon } from '../components/SafeIcon';
 
 export default function ConfiguracoesScreen() {
+  const router = useRouter();
   // API
   const [apiUrl, setApiUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -264,6 +266,17 @@ const getEnvApiUrl = (): string | undefined => {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Configurações do Aplicativo</Text>
         <Text style={styles.headerSubtitle}>Defina a URL da API e as credenciais WiFi.</Text>
+      </View>
+
+      <View style={{ margin: 16, marginBottom: 0 }}>
+        <TouchableOpacity 
+            style={[styles.button, styles.primaryButton, { backgroundColor: '#ff9800', justifyContent: 'flex-start' }]} 
+            onPress={() => router.push('/delivery-config')}
+            activeOpacity={0.8}
+        >
+            <Ionicons name="bicycle" size={24} color="#fff" style={{ marginRight: 10 }} />
+            <Text style={[styles.primaryButtonText, { fontSize: 16 }]}>Configurar Delivery</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Seção API */}

@@ -6,7 +6,9 @@ const router = express.Router();
 // GET: Retornar dados da empresa (único registro)
 router.get("/", async (req, res) => {
   try {
-    const company = await prisma.company.findFirst();
+    const company = await prisma.company.findFirst({
+      include: { deliveryRanges: true }
+    });
     res.json(company || {}); // Retorna objeto vazio se não houver cadastro ainda
   } catch (error) {
     console.error("Erro ao buscar dados da empresa:", error);
@@ -31,15 +33,40 @@ router.post("/", async (req, res) => {
 
     if (existing) {
       // Atualiza
+      const { deliveryRanges, id, createdAt, updatedAt, ...companyData } = data;
+      
       const updated = await prisma.company.update({
         where: { id: existing.id },
-        data: { ...data, updatedAt: new Date() }
+        data: { 
+          ...companyData, 
+          updatedAt: new Date(),
+          deliveryRanges: {
+            deleteMany: {},
+            create: Array.isArray(deliveryRanges) ? deliveryRanges.map(r => ({
+              minDist: Number(r.minDist),
+              maxDist: Number(r.maxDist),
+              price: Number(r.price)
+            })) : []
+          }
+        },
+        include: { deliveryRanges: true }
       });
       return res.json({ message: "Dados atualizados com sucesso", company: updated });
     } else {
       // Cria
+      const { deliveryRanges, ...companyData } = data;
       const created = await prisma.company.create({
-        data: data
+        data: {
+          ...companyData,
+          deliveryRanges: {
+            create: Array.isArray(deliveryRanges) ? deliveryRanges.map(r => ({
+              minDist: Number(r.minDist),
+              maxDist: Number(r.maxDist),
+              price: Number(r.price)
+            })) : []
+          }
+        },
+        include: { deliveryRanges: true }
       });
       return res.status(201).json({ message: "Empresa cadastrada com sucesso", company: created });
     }
