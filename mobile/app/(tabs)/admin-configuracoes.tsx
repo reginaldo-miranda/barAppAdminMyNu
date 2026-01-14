@@ -105,6 +105,40 @@ export default function AdminConfiguracoesScreen() {
     }
   };
 
+  const fetchAddressByCep = async (cep: string) => {
+    // Remove caracteres não numéricos
+    const cleanCep = cep.replace(/\D/g, '');
+    if (cleanCep.length !== 8) {
+        Alert.alert('CEP Inválido', 'O CEP deve conter 8 dígitos.');
+        return;
+    }
+
+    try {
+        setLoadingCompany(true);
+        const response = await fetch(`https://brasilapi.com.br/api/cep/v2/${cleanCep}`);
+        const data = await response.json();
+
+        if (response.ok) {
+            setCompanyData((prev: any) => ({
+                ...prev,
+                logradouro: data.street || prev.logradouro,
+                bairro: data.neighborhood || prev.bairro,
+                cidade: data.city || prev.cidade,
+                uf: data.state || prev.uf,
+                //ibge: data.ibge || prev.ibge, // BrasilAPI nem sempre retorna ibge na v2, mas se retornar ok
+            }));
+            Alert.alert('Sucesso', 'Endereço encontrado!');
+        } else {
+            Alert.alert('Erro', 'CEP não encontrado.');
+        }
+    } catch (error) {
+        console.error('Erro ao buscar CEP:', error);
+        Alert.alert('Erro', 'Falha ao buscar CEP. Verifique sua conexão.');
+    } finally {
+        setLoadingCompany(false);
+    }
+  };
+
   const handleEditPermissions = (userToEdit: UserPermissions) => {
     setSelectedUser({ ...userToEdit });
     setModalVisible(true);
@@ -455,7 +489,27 @@ export default function AdminConfiguracoesScreen() {
             <SimpleInput label="Inscrição Municipal" value={companyData.inscricaoMunicipal} onChangeText={(t: string) => setCompanyData({...companyData, inscricaoMunicipal: t})} />
 
             <Text style={styles.sectionHeader}>2. Endereço Fiscal</Text>
-            <SimpleInput label="CEP" value={companyData.cep} onChangeText={(t: string) => setCompanyData({...companyData, cep: t})} keyboardType="numeric" />
+            <View style={{ marginBottom: 12 }}>
+                <Text style={styles.inputLabel}>CEP</Text>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <View style={{ flex: 1 }}>
+                        <TextInput 
+                            style={styles.inputField}
+                            value={companyData.cep} 
+                            onChangeText={(t) => setCompanyData({...companyData, cep: t})} 
+                            keyboardType="numeric"
+                            placeholder="00000-000"
+                            maxLength={9}
+                        />
+                    </View>
+                    <TouchableOpacity 
+                        style={{ backgroundColor: '#2196F3', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 16, borderRadius: 8 }}
+                        onPress={() => fetchAddressByCep(companyData.cep || '')}
+                    >
+                         <SafeIcon name="search" size={20} color="#fff" fallbackText="🔍" />
+                    </TouchableOpacity>
+                </View>
+            </View>
             <SimpleInput label="Logradouro" value={companyData.logradouro} onChangeText={(t: string) => setCompanyData({...companyData, logradouro: t})} />
             <View style={{flexDirection: 'row', gap: 10}}>
                 <View style={{flex: 1}}><SimpleInput label="Número" value={companyData.numero} onChangeText={(t: string) => setCompanyData({...companyData, numero: t})} /></View>

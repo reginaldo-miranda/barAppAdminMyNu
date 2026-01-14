@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,8 +9,9 @@ import {
   ActivityIndicator,
   RefreshControl,
   TextInput,
+  Platform,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { categoryService } from '../../src/services/api';
@@ -29,6 +30,7 @@ export default function ListagemCategoriasScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [filteredCategories, setFilteredCategories] = useState<Category[]>([]);
+  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
 
 
@@ -40,19 +42,19 @@ export default function ListagemCategoriasScreen() {
     }
   }, [hasPermission]);
 
-  useEffect(() => {
-    if (hasPermission('produtos')) {
-      loadCategories();
-    }
-  }, [hasPermission]);
+  useFocusEffect(
+    useCallback(() => {
+      if (hasPermission('produtos')) {
+        loadCategories();
+      }
+    }, [hasPermission])
+  );
 
   useEffect(() => {
     filterCategories();
   }, [searchText, categories]);
 
-  if (!hasPermission('produtos')) {
-    return null;
-  }
+
 
   const loadCategories = async () => {
     try {
@@ -102,21 +104,32 @@ export default function ListagemCategoriasScreen() {
 };
 
   const handleDelete = (category: Category) => {
+    const performDelete = async () => {
+        try {
+            await categoryService.delete(category.id);
+            // Remove da lista visualmente
+            setCategories(prev => prev.filter(c => c.id !== category.id));
+            showMessage('success', 'Categoria excluída com sucesso.');
+          } catch (error: any) {
+            console.error('Erro ao excluir categoria:', error);
+            const errorMsg = error.response?.data?.error || 'Erro ao excluir categoria.';
+            showMessage('error', errorMsg);
+          }
+    };
+
+    if (Platform.OS === 'web') {
+        if (confirm(`Tem certeza que deseja excluir a categoria "${category.nome}"?`)) {
+            performDelete();
+        }
+        return;
+    }
+    
     Alert.alert(
       'Excluir Categoria',
       `Tem certeza que deseja excluir a categoria "${category.nome}"?`,
       [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Excluir', style: 'destructive', onPress: async () => {
-          try {
-            await categoryService.delete(category.id);
-            setCategories(prev => prev.filter(c => c.id !== category.id));
-            Alert.alert('Sucesso', 'Categoria excluída com sucesso!');
-          } catch (error) {
-            console.error('Erro ao excluir categoria:', error);
-            Alert.alert('Erro', 'Erro ao excluir categoria. Tente novamente.');
-          }
-        }},
+        { text: 'Excluir', style: 'destructive', onPress: performDelete },
       ]
     );
   };
@@ -124,26 +137,40 @@ export default function ListagemCategoriasScreen() {
   const toggleStatus = (category: Category) => {
     const newStatus = !category.ativo;
     const action = newStatus ? 'ativar' : 'desativar';
+
+    const performToggle = async () => {
+         try {
+            await categoryService.update(category.id, { ativo: newStatus });
+            setCategories(prev => prev.map(c => 
+              c.id === category.id ? { ...c, ativo: newStatus } : c
+            ));
+            showMessage('success', `Categoria ${newStatus ? 'ativada' : 'desativada'} com sucesso!`);
+          } catch (error) {
+            console.error('Erro ao alterar status da categoria:', error);
+            showMessage('error', 'Erro ao alterar status da categoria.');
+          }
+    };
+
+    if (Platform.OS === 'web') {
+        if (confirm(`Deseja ${action} a categoria "${category.nome}"?`)) {
+            performToggle();
+        }
+        return;
+    }
     
     Alert.alert(
       'Alterar Status',
       `Deseja ${action} a categoria "${category.nome}"?`,
       [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Confirmar', onPress: async () => {
-          try {
-            await categoryService.update(category.id, { ativo: newStatus });
-            setCategories(prev => prev.map(c => 
-              c.id === category.id ? { ...c, ativo: newStatus } : c
-            ));
-            Alert.alert('Sucesso', `Categoria ${newStatus ? 'ativada' : 'desativada'} com sucesso!`);
-          } catch (error) {
-            console.error('Erro ao alterar status da categoria:', error);
-            Alert.alert('Erro', 'Erro ao alterar status da categoria. Tente novamente.');
-          }
-        }},
+        { text: 'Confirmar', onPress: performToggle },
       ]
     );
+  };
+
+  const showMessage = (type: 'success' | 'error', text: string) => {
+    setMessage({ type, text });
+    setTimeout(() => setMessage(null), 3000);
   };
 
   const renderCategoryItem = ({ item }: { item: Category }) => (
@@ -196,6 +223,10 @@ export default function ListagemCategoriasScreen() {
     </View>
   );
 
+  if (!hasPermission('produtos')) {
+    return null;
+  }
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -215,7 +246,7 @@ export default function ListagemCategoriasScreen() {
         >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Categorias</Text>
+        <Text style={styles.headerTitle}>Categorias (v2)</Text>
         <TouchableOpacity
           style={styles.addButton}
           onPress={() => router.push('/categorias/cadastro' as any)}
@@ -223,6 +254,16 @@ export default function ListagemCategoriasScreen() {
           <Ionicons name="add" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
+
+
+
+
+
+      {message && (
+        <View style={[styles.messageBanner, message.type === 'error' ? styles.errorBanner : styles.successBanner]}>
+          <Text style={styles.messageText}>{message.text}</Text>
+        </View>
+      )}
 
       {/* Search */}
       <View style={styles.searchContainer}>
@@ -468,5 +509,27 @@ const styles = StyleSheet.create({
     color: '#888',
     textAlign: 'center',
     marginTop: 8,
+  },
+  messageBanner: {
+    padding: 12,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  successBanner: {
+    backgroundColor: '#E8F5E8',
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  errorBanner: {
+    backgroundColor: '#FFEBEE',
+    borderWidth: 1,
+    borderColor: '#F44336',
+  },
+  messageText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
   },
 });

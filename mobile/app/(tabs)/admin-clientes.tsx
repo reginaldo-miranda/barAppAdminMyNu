@@ -11,6 +11,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Switch,
+  Platform,
 } from 'react-native';
 
 import { customerService } from '../../src/services/api';
@@ -19,7 +20,7 @@ import ScreenIdentifier from '../../src/components/ScreenIdentifier';
 import { SafeIcon } from '../../components/SafeIcon';
 
 interface Customer {
-  _id: string;
+  id: number;
   nome: string;
   endereco: string;
   cidade: string;
@@ -74,24 +75,55 @@ export default function AdminClientesScreen() {
     }
   };
 
+  // Helper para alertas compatíveis com Web
+  const safeAlert = (title: string, message: string, buttons?: any[]) => {
+    if (Platform.OS === 'web') {
+      if (buttons && buttons.length > 0) {
+        // Simulação simples de confirmation para web
+        // Procura botão com style 'destructive' ou text 'Excluir/Sim/Confirmar'
+        const confirmBtn = buttons.find((b: any) => b.style === 'destructive' || ['Excluir', 'Sim', 'Confirmar'].includes(b.text));
+        if (confirmBtn) {
+          if (window.confirm(`${title}\n\n${message}`)) {
+            if (confirmBtn.onPress) confirmBtn.onPress();
+          } else {
+             const cancelBtn = buttons.find((b: any) => b.style === 'cancel');
+             if (cancelBtn && cancelBtn.onPress) cancelBtn.onPress();
+          }
+        } else {
+          // Apenas alerta
+          window.alert(`${title}\n\n${message}`);
+          // Se tiver botão OK/Default, chama
+          const okBtn = buttons.find((b: any) => !b.style || b.style === 'default');
+          if (okBtn && okBtn.onPress) okBtn.onPress();
+        }
+      } else {
+        window.alert(`${title}\n\n${message}`);
+      }
+    } else {
+      Alert.alert(title, message, buttons);
+    }
+  };
+
   const handleSaveCustomer = async () => {
     try {
       if (!formData.nome.trim()) {
-        Alert.alert('Erro', 'Nome é obrigatório');
+        safeAlert('Erro', 'Nome é obrigatório');
         return;
       }
 
       const customerData = {
         ...formData,
-        dataNascimento: formData.dataNascimento ? new Date(formData.dataNascimento) : undefined,
+        // Enviar null se string vazia para limpar data, ou undefined se não alterado (mas aqui estamos editando tudo)
+        // Prisma geralmente aceita null para limpar.
+        dataNascimento: formData.dataNascimento ? new Date(formData.dataNascimento) : null,
       };
 
       if (editingCustomer) {
-        await customerService.update(editingCustomer._id, customerData);
-        Alert.alert('Sucesso', 'Cliente atualizado com sucesso');
+        await customerService.update(editingCustomer.id, customerData);
+        safeAlert('Sucesso', 'Cliente atualizado com sucesso');
       } else {
         await customerService.create(customerData);
-        Alert.alert('Sucesso', 'Cliente criado com sucesso');
+        safeAlert('Sucesso', 'Cliente criado com sucesso');
       }
 
       setModalVisible(false);
@@ -99,7 +131,8 @@ export default function AdminClientesScreen() {
       loadCustomers();
     } catch (error: any) {
       console.error('Erro ao salvar cliente:', error);
-      Alert.alert('Erro', 'Erro ao salvar cliente');
+      const errorMessage = error.response?.data?.error || error.message || 'Erro ao salvar cliente';
+      safeAlert('Erro', errorMessage);
     }
   };
 
@@ -121,7 +154,7 @@ export default function AdminClientesScreen() {
   };
 
   const handleDeleteCustomer = (customer: Customer) => {
-    Alert.alert(
+    safeAlert(
       'Confirmar Exclusão',
       `Deseja realmente excluir o cliente "${customer.nome}"?`,
       [
@@ -131,12 +164,15 @@ export default function AdminClientesScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await customerService.delete(customer._id);
-              Alert.alert('Sucesso', 'Cliente excluído com sucesso');
-              loadCustomers();
+              await customerService.delete(customer.id);
+              // Pequeno delay para garantir que o alert feche antes de tentar abrir outro (bug comum)
+              setTimeout(() => {
+                  safeAlert('Sucesso', 'Cliente excluído com sucesso');
+                  loadCustomers();
+              }, 100);
             } catch (error: any) {
               console.error('Erro ao excluir cliente:', error);
-              Alert.alert('Erro', 'Erro ao excluir cliente');
+              safeAlert('Erro', 'Erro ao excluir cliente');
             }
           },
         },
@@ -300,7 +336,7 @@ export default function AdminClientesScreen() {
         <FlatList
           data={filteredCustomers}
           renderItem={renderCustomer}
-          keyExtractor={(item) => item._id}
+          keyExtractor={(item) => item.id.toString()}
           contentContainerStyle={styles.listContainer}
           showsVerticalScrollIndicator={false}
         />

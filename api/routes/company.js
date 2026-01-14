@@ -33,7 +33,17 @@ router.post("/", async (req, res) => {
 
     if (existing) {
       // Atualiza
-      const { deliveryRanges, id, createdAt, updatedAt, ...companyData } = data;
+      // Sanitização: remove campos relacionais ou metadados que não devem ser salvos diretamente na tabela Company
+      const { 
+        deliveryRanges, 
+        id, 
+        createdAt, 
+        updatedAt, 
+        products, 
+        users, 
+        sales, 
+        ...companyData 
+      } = data;
       
       const updated = await prisma.company.update({
         where: { id: existing.id },
@@ -54,10 +64,37 @@ router.post("/", async (req, res) => {
       return res.json({ message: "Dados atualizados com sucesso", company: updated });
     } else {
       // Cria
-      const { deliveryRanges, ...companyData } = data;
+      // Cria
+      // Sanitização:
+      const { 
+        deliveryRanges, 
+        id, 
+        createdAt, 
+        updatedAt, 
+        products, 
+        users, 
+        sales, 
+        ...companyData 
+      } = data;
+
+      // Se for a primeira criação (via tela de delivery), pode faltar dados obrigatórios da empresa
+      // Preencher com defaults para não quebrar
+      const payload = {
+         razaoSocial: "Minha Empresa (Configurar)",
+         nomeFantasia: "Minha Empresa",
+         cnpj: "00.000.000/0000-00", // Placeholder inicial
+         ...companyData
+      };
+      
+      // Garantir CNPJ único se for placeholder (caso já exista um placeholder, o que não deveria ocorrer pois cairia no update, mas por segurança)
+      if (payload.cnpj === "00.000.000/0000-00") {
+          const count = await prisma.company.count();
+          if (count > 0) payload.cnpj = `00.000.000/0000-${count + 1}`;
+      }
+
       const created = await prisma.company.create({
         data: {
-          ...companyData,
+          ...payload,
           deliveryRanges: {
             create: Array.isArray(deliveryRanges) ? deliveryRanges.map(r => ({
               minDist: Number(r.minDist),
@@ -72,7 +109,8 @@ router.post("/", async (req, res) => {
     }
   } catch (error) {
     console.error("Erro ao salvar dados da empresa:", error);
-    res.status(500).json({ error: "Erro interno ao salvar empresa" });
+    // Retornar a mensagem exata do erro para facilitar o debug no frontend
+    res.status(500).json({ error: "Erro ao salvar empresa: " + (error.message || error) });
   }
 });
 

@@ -70,6 +70,39 @@ const DeliveryDetailsModal: React.FC<DeliveryDetailsModalProps> = ({
     loading,
     GOOGLE_API_KEY
 }) => {
+    const [cep, setCep] = useState('');
+    
+    const handleCepSearch = async () => {
+        const cleanCep = cep.replace(/\D/g, '');
+        if (cleanCep.length !== 8) {
+            Alert.alert('Erro', 'CEP inválido. Digite 8 números.');
+            return;
+        }
+        
+        try {
+            const res = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
+            const data = await res.json();
+            
+            if (data.erro) {
+                Alert.alert('Erro', 'CEP não encontrado.');
+                return;
+            }
+            
+            // Formata: Rua, Bairro, Cidade - UF
+            const formatted = `${data.logradouro}, ${data.bairro}, ${data.localidade} - ${data.uf}`;
+            setDeliveryAddress(formatted);
+            // Opcional: focar no campo de endereço ou já disparar busca (melhor deixar usuário por número)
+            
+            if (Platform.OS === 'web') {
+                 window.alert('Endereço carregado! Complete com o número e clique em Buscar.');
+            } else {
+                 Alert.alert('Sucesso', 'Endereço carregado! Complete com o número e clique em Buscar.');
+            }
+        } catch (error) {
+            console.error(error);
+            Alert.alert('Erro', 'Falha ao buscar CEP.');
+        }
+    };
     
     const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
         const R = 6371; 
@@ -174,6 +207,24 @@ const DeliveryDetailsModal: React.FC<DeliveryDetailsModalProps> = ({
                                 {/* Address Section */}
                                 <Text style={styles.sectionTitle}>Endereço de Entrega</Text>
                                 
+                                {/* CEP Input */}
+                                <View style={styles.webAddressContainer}>
+                                    <TextInput 
+                                        style={styles.webInput} 
+                                        placeholder="CEP (apenas números)" 
+                                        value={cep}
+                                        onChangeText={(t) => setCep(t.replace(/\D/g, ''))}
+                                        keyboardType="numeric"
+                                        maxLength={8}
+                                    />
+                                    <TouchableOpacity 
+                                        style={[styles.webSearchButton, { backgroundColor: '#607D8B' }]}
+                                        onPress={handleCepSearch}
+                                    >
+                                        <Ionicons name="search" size={20} color="#fff" />
+                                    </TouchableOpacity>
+                                </View>
+                                
                                 {Platform.OS !== 'web' ? (
                                     <View style={{ height: 44, marginBottom: 10, zIndex: 9999 }}>
                                         <GooglePlacesAutocomplete
@@ -220,30 +271,193 @@ const DeliveryDetailsModal: React.FC<DeliveryDetailsModalProps> = ({
                                                     return;
                                                 }
 
+                                                const doSearch = async (addr: string) => {
+                                                    const query = encodeURIComponent(addr);
+                                                    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1&countrycodes=br`;
+                                                    // Usar um UA mais descritivo para evitar bloqueios, idealmente com contato
+                                                    const res = await fetch(url, { headers: { 'User-Agent': 'BarApp/1.0 (admin@barapp.com)' }});
+                                                    return await res.json();
+                                                };
+
+                                                const doStructuredSearch = async (street: string, city: string, state: string) => {
+                                                    const params = new URLSearchParams();
+                                                    params.append('street', street);
+                                                    if (city) params.append('city', city);
+                                                    if (state) params.append('state', state);
+                                                    params.append('countrycodes', 'br');
+                                                    params.append('format', 'json');
+                                                    params.append('limit', '1');
+                                                    
+                                                    const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
+                                                    const res = await fetch(url, { headers: { 'User-Agent': 'BarApp/1.0 (admin@barapp.com)' }});
+                                                    return await res.json();
+                                                };
+
+                                                const normalizeAddress = (addr: string) => {
+                                                    return addr
+                                                        .replace(/\bCap\b\.?/gi, 'Capitão') // Ajuste no regex para pegar Cap ou Cap.
+                                                        .replace(/\bCapitao\b/gi, 'Capitão')
+                                                        .replace(/\bDr\b\.?/gi, 'Doutor')
+                                                        .replace(/\bProf\b\.?/gi, 'Professor')
+                                                        .replace(/\bAv\b\.?/gi, 'Avenida')
+                                                        .replace(/\bPç\b\.?/gi, 'Praça')
+                                                        .replace(/\bAl\b\.?/gi, 'Alameda');
+                                                };
+
+                                                const stripPrefix = (addr: string) => {
+                                                    return addr.replace(/^(Rua|Avenida|Travessa|Alameda|Praça|Rodovia)\s+/i, '');
+                                                };
+
                                                 try {
-                                                    const query = encodeURIComponent(deliveryAddress);
-                                                    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1`;
-                                                    
-                                                    const res = await fetch(url, { headers: { 'User-Agent': 'BarApp/1.0' }});
-                                                    const json = await res.json();
-                                                    
+                                                    // 1. Tentar endereço exato (Query completa)
+                                                    let json = await doSearch(deliveryAddress);
+                                                    let isApprox = false;
+
+                                                    // 1.5 Tentar endereço normalizado
+                                                    let normAddr = normalizeAddress(deliveryAddress);
+                                                    if (!Array.isArray(json) || json.length === 0) {
+                                                        if (normAddr !== deliveryAddress) {
+                                                            json = await doSearch(normAddr);
+                                                            if (Array.isArray(json) && json.length > 0) {
+                                                                setDeliveryAddress(normAddr); 
+                                                            }
+                                                        }
+                                                    }
+
+                                                    // 2. Tentar remover o prefixo (Ex: "Capitão..." em vez de "Rua Capitão...")
+                                                    if (!Array.isArray(json) || json.length === 0) {
+                                                        const noPrefixAddr = stripPrefix(normAddr);
+                                                        if (noPrefixAddr !== normAddr) {
+                                                            json = await doSearch(noPrefixAddr);
+                                                            // Se achar sem prefixo, é válido
+                                                        }
+                                                    }
+
+                                                    // 3. Se falhar, tentar busca estruturada (Separando por vírgula ou hífen)
+                                                    if (!Array.isArray(json) || json.length === 0) {
+                                                        const parts = normAddr.split(/[,–-]/).map(p => p.trim()).filter(p => p.length > 0);
+                                                        
+                                                        if (parts.length >= 2) {
+                                                            const street = parts[0];
+                                                            let city = '';
+                                                            let state = '';
+                                                            
+                                                            let lastPart = parts[parts.length - 1];
+                                                            let cityIndex = parts.length - 1;
+                                                            
+                                                            if (lastPart.length === 2 && isNaN(Number(lastPart))) {
+                                                                state = lastPart;
+                                                                cityIndex--;
+                                                            }
+                                                            
+                                                            if (cityIndex > 0) {
+                                                                let potentialCity = parts[cityIndex];
+                                                                if (isNaN(Number(potentialCity))) {
+                                                                    city = potentialCity;
+                                                                }
+                                                            }
+
+                                                            const removeAccents = (str: string) => {
+                                                                return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                                                            };
+
+                                                            const stripTitles = (str: string) => {
+                                                                return str.replace(/\b(Capitão|Capitao|Cap|Doutor|Dr|Professor|Prof|General|Gen|Coronel|Cel|Major|Maj|Vereador|Ver|Deputado|Dep|Presidente|Pres)\b\.?/gi, '').trim();
+                                                            };
+
+                                                            if (street && (city || state)) {
+                                                                // 1. Estruturada Normal
+                                                                let structRes = await doStructuredSearch(street, city, state);
+                                                                
+                                                                // 2. Estruturada Sem Acentos e Sem 'Rua'
+                                                                if (!Array.isArray(structRes) || structRes.length === 0) {
+                                                                    const streetClean = removeAccents(stripPrefix(street));
+                                                                    if (streetClean !== street) {
+                                                                        structRes = await doStructuredSearch(streetClean, city, state);
+                                                                    }
+                                                                }
+
+                                                                // 3. Estruturada Sem Títulos (Ex: "Capitão Angelo" -> "Angelo")
+                                                                // Isso ajuda muito quando o usuário erra o título ou abreviação
+                                                                if (!Array.isArray(structRes) || structRes.length === 0) {
+                                                                    const streetNoTitles = stripTitles(stripPrefix(street));
+                                                                    if (streetNoTitles.length > 3 && streetNoTitles !== street) { // Só busca se sobrou algo relevante
+                                                                        structRes = await doStructuredSearch(streetNoTitles, city, state);
+                                                                    }
+                                                                }
+
+                                                                // 4. Última tentativa: Sem títulos e sem acentos (Core Name puríssimo)
+                                                                if (!Array.isArray(structRes) || structRes.length === 0) {
+                                                                    const streetCore = removeAccents(stripTitles(stripPrefix(street)));
+                                                                    if (streetCore.length > 3 && streetCore !== street) {
+                                                                        structRes = await doStructuredSearch(streetCore, city, state);
+                                                                    }
+                                                                }
+                                                                
+
+                                                                
+                                                                if (Array.isArray(structRes) && structRes.length > 0) {
+                                                                    json = structRes;
+                                                                    isApprox = true;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+
+                                                    // 5. Fallback Finalissimo: Tentar busca pelo CEP (que temos no estado)
+                                                    // Se tudo falhou, mas temos um CEP válido, pegamos a coordenada do CEP.
+                                                    // Isso garante que o cálculo de entrega funcione.
+                                                    if ((!Array.isArray(json) || json.length === 0) && cep && cep.length === 8) {
+                                                         const cleanCep = cep.replace(/\D/g, '');
+                                                         // Formato aceito pelo nominatim: q=CEP ou postalcode=CEP
+                                                         // Vamos usar estruturado
+                                                         const cepUrl = `https://nominatim.openstreetmap.org/search?postalcode=${cleanCep}&countrycodes=br&format=json&limit=1`;
+                                                         const resCep = await fetch(cepUrl, { headers: { 'User-Agent': 'BarApp/1.0 (admin@barapp.com)' }});
+                                                         const jsonCep = await resCep.json();
+                                                         
+                                                         if (Array.isArray(jsonCep) && jsonCep.length > 0) {
+                                                             json = jsonCep;
+                                                             isApprox = true;
+                                                             // Aviso que foi pelo CEP
+                                                             safeAlert('Aviso', 'Endereço exato não localizado. Usando localização do CEP para cálculo.');
+                                                         }
+                                                    }
+
+                                                    // 4. Fallback final: Remover número da string NORMALIZADA
+                                                    if (!Array.isArray(json) || json.length === 0) {
+                                                        // Remover número isolado por vírgulas ou hifens
+                                                        const cleanAddr = normAddr.replace(/[,–-]?\s*\d+\s*[,–-]?/, ','); 
+                                                        if (cleanAddr !== normAddr) {
+                                                            const cleanAddrFinal = cleanAddr.replace(/^,|,$/g, '').trim(); // Limpa vírgulas soltas
+                                                            json = await doSearch(cleanAddrFinal);
+                                                            isApprox = true;
+                                                        }
+                                                    }
+
                                                     if (Array.isArray(json) && json.length > 0) {
                                                         const result = json[0];
                                                         const lat = parseFloat(result.lat);
                                                         const lon = parseFloat(result.lon);
                                                         
-                                                        setDeliveryAddress(result.display_name);
+                                                        // Se foi aproximado, manter o texto original digitado, mas usar coord da rua
+                                                         if (isApprox) {
+                                                             safeAlert('Endereço Aproximado', 'Número não encontrado exato. Usando centro da rua/bairro para cálculo.');
+                                                         } else {
+                                                             setDeliveryAddress(result.display_name); // Atualiza com o formatado bonitinho se for exato
+                                                         }
+
                                                         setDeliveryCoords({ lat, lng: lon });
                                                         
                                                         const straightLine = calculateDistance(Number(companyConfig.latitude), Number(companyConfig.longitude), lat, lon);
                                                         const estRoadDist = parseFloat((straightLine * 1.3).toFixed(2));
                                                         setDeliveryDistance(estRoadDist);
                                                         
-                                                        safeAlert('Endereço Encontrado', `Distância: ${estRoadDist} km`);
+                                                        if (!isApprox) safeAlert('Endereço Encontrado', `Distância: ${estRoadDist} km`);
                                                     } else {
-                                                        safeAlert('Não encontrado', 'Tente adicionar cidade e estado.');
+                                                        safeAlert('Não encontrado', 'Tente verificar a formatação (Rua, Número, Cidade - UF).');
                                                     }
                                                 } catch (e: any) {
+                                                    console.error(e);
                                                     safeAlert('Erro', 'Falha ao buscar endereço.');
                                                 }
                                             }}

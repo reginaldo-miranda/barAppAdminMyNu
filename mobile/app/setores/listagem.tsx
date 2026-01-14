@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator, RefreshControl, TextInput } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { setorImpressaoService } from '../../src/services/api';
@@ -29,9 +29,13 @@ export default function ListagemSetoresScreen() {
     }
   }, [hasPermission]);
 
-  useEffect(() => {
-    if (hasPermission('produtos')) loadSetores();
-  }, [hasPermission]);
+  useFocusEffect(
+    useCallback(() => {
+      if (hasPermission('produtos')) {
+        loadSetores();
+      }
+    }, [hasPermission])
+  );
 
   useEffect(() => {
     const q = searchText.trim().toLowerCase();

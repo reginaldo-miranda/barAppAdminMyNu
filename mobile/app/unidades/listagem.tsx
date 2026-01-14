@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,8 +9,9 @@ import {
   ActivityIndicator,
   RefreshControl,
   TextInput,
+  Platform,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { unidadeMedidaService } from '../../src/services/api';
@@ -31,12 +32,15 @@ export default function ListagemUnidadesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [filteredUnits, setFilteredUnits] = useState<Unit[]>([]);
+  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
-  useEffect(() => {
-    if (hasPermission('produtos')) {
-      loadUnits();
-    }
-  }, [hasPermission]);
+  useFocusEffect(
+    useCallback(() => {
+      if (hasPermission('produtos')) {
+        loadUnits();
+      }
+    }, [hasPermission])
+  );
 
   useEffect(() => {
     filterUnits();
@@ -99,35 +103,35 @@ export default function ListagemUnidadesScreen() {
   };
 
   const handleEdit = (unit: Unit) => {
-    Alert.alert(
-      'Editar Unidade',
-      `Deseja editar a unidade "${unit.nome}"?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Editar', onPress: () => {
-          router.push(`/unidades/cadastro?id=${unit.id}` as any);
-        }},
-      ]
-    );
+    router.push(`/unidades/cadastro?id=${unit.id}` as any);
   };
 
   const handleDelete = async (unit: Unit) => {
+    const performDelete = async () => {
+        try {
+            await unidadeMedidaService.delete(unit.id);
+            setUnits(prev => prev.filter(u => u.id !== unit.id));
+            setFilteredUnits(prev => prev.filter(u => u.id !== unit.id));
+            showMessage('success', 'Unidade excluída com sucesso!');
+          } catch (error) {
+            console.error('Erro ao excluir unidade:', error);
+            showMessage('error', 'Não foi possível excluir a unidade.');
+          }
+    };
+
+    if (Platform.OS === 'web') {
+        if (confirm(`Tem certeza que deseja excluir a unidade "${unit.nome}"?`)) {
+            performDelete();
+        }
+        return;
+    }
+
     Alert.alert(
       'Excluir Unidade',
       `Tem certeza que deseja excluir a unidade "${unit.nome}"?`,
       [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Excluir', style: 'destructive', onPress: async () => {
-          try {
-            await unidadeMedidaService.delete(unit.id);
-            setUnits(prev => prev.filter(u => u.id !== unit.id));
-            setFilteredUnits(prev => prev.filter(u => u.id !== unit.id));
-            Alert.alert('Sucesso', 'Unidade excluída com sucesso!');
-          } catch (error) {
-            console.error('Erro ao excluir unidade:', error);
-            Alert.alert('Erro', 'Não foi possível excluir a unidade. Tente novamente.');
-          }
-        }},
+        { text: 'Excluir', style: 'destructive', onPress: performDelete },
       ]
     );
   };
@@ -135,24 +139,39 @@ export default function ListagemUnidadesScreen() {
   const toggleStatus = async (unit: Unit) => {
     const newStatus = !unit.ativo;
     const action = newStatus ? 'ativar' : 'desativar';
+    
+    const performToggle = async () => {
+         try {
+            await unidadeMedidaService.update(unit.id, { ativo: newStatus });
+            setUnits(prev => prev.map(u => (u.id === unit.id ? { ...u, ativo: newStatus } : u)));
+            setFilteredUnits(prev => prev.map(u => (u.id === unit.id ? { ...u, ativo: newStatus } : u)));
+            showMessage('success', `Unidade ${newStatus ? 'ativada' : 'desativada'} com sucesso!`);
+          } catch (error) {
+            console.error('Erro ao alterar status da unidade:', error);
+            showMessage('error', `Não foi possível ${action} a unidade.`);
+          }
+    };
+
+    if (Platform.OS === 'web') {
+        if (confirm(`Deseja ${action} a unidade "${unit.nome}"?`)) {
+            performToggle();
+        }
+        return;
+    }
+    
     Alert.alert(
       'Alterar Status',
       `Deseja ${action} a unidade "${unit.nome}"?`,
       [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Confirmar', onPress: async () => {
-          try {
-            await unidadeMedidaService.update(unit.id, { ativo: newStatus });
-            setUnits(prev => prev.map(u => (u.id === unit.id ? { ...u, ativo: newStatus } : u)));
-            setFilteredUnits(prev => prev.map(u => (u.id === unit.id ? { ...u, ativo: newStatus } : u)));
-            Alert.alert('Sucesso', `Unidade ${newStatus ? 'ativada' : 'desativada'} com sucesso!`);
-          } catch (error) {
-            console.error('Erro ao alterar status da unidade:', error);
-            Alert.alert('Erro', `Não foi possível ${action} a unidade. Tente novamente.`);
-          }
-        }},
+        { text: 'Confirmar', onPress: performToggle },
       ]
     );
+  };
+
+  const showMessage = (type: 'success' | 'error', text: string) => {
+    setMessage({ type, text });
+    setTimeout(() => setMessage(null), 3000);
   };
 
   const renderUnitItem = ({ item }: { item: Unit }) => (
@@ -235,6 +254,11 @@ export default function ListagemUnidadesScreen() {
           <Ionicons name="add" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
+      {message && (
+        <View style={[styles.messageBanner, message.type === 'error' ? styles.errorBanner : styles.successBanner]}>
+          <Text style={styles.messageText}>{message.text}</Text>
+        </View>
+      )}
 
       {/* Search */}
       <View style={styles.searchContainer}>
@@ -496,5 +520,27 @@ const styles = StyleSheet.create({
     color: '#888',
     textAlign: 'center',
     marginTop: 8,
+  },
+  messageBanner: {
+    padding: 12,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  successBanner: {
+    backgroundColor: '#E8F5E8',
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  errorBanner: {
+    backgroundColor: '#FFEBEE',
+    borderWidth: 1,
+    borderColor: '#F44336',
+  },
+  messageText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
   },
 });

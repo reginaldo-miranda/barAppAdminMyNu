@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,8 +9,9 @@ import {
   ActivityIndicator,
   RefreshControl,
   TextInput,
+  Platform,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { typeService } from '../../src/services/api';
@@ -30,6 +31,7 @@ export default function ListagemTiposScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [filteredTypes, setFilteredTypes] = useState<Type[]>([]);
+  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   const loadTypes = async () => {
     try {
@@ -73,11 +75,13 @@ export default function ListagemTiposScreen() {
     setFilteredTypes(filtered);
   };
 
-  useEffect(() => {
-    if (hasPermission('produtos')) {
-      loadTypes();
-    }
-  }, [hasPermission]);
+  useFocusEffect(
+    useCallback(() => {
+      if (hasPermission('produtos')) {
+        loadTypes();
+      }
+    }, [hasPermission])
+  );
 
   useEffect(() => {
     filterTypes();
@@ -97,27 +101,76 @@ export default function ListagemTiposScreen() {
   }
 
   const handleEdit = (type: Type) => {
-    Alert.alert(
-      'Editar Tipo',
-      'Tipos são categorias fixas e não podem ser editados',
-      [{ text: 'OK' }]
-    );
+    router.push(`/tipos/cadastro?id=${type.id}` as any);
   };
 
   const handleDelete = (type: Type) => {
+    const performDelete = async () => {
+        try {
+            await typeService.delete(type.id);
+            setTypes(prev => prev.filter(t => t.id !== type.id));
+            showMessage('success', 'Tipo excluído com sucesso.');
+          } catch (error: any) {
+            console.error('Erro ao excluir tipo:', error);
+            const errorMsg = error.response?.data?.error || 'Erro ao excluir tipo.';
+            showMessage('error', errorMsg);
+          }
+    };
+
+    if (Platform.OS === 'web') {
+        if (confirm(`Tem certeza que deseja excluir o tipo "${type.nome}"?`)) {
+            performDelete();
+        }
+        return;
+    }
+    
     Alert.alert(
       'Excluir Tipo',
-      'Tipos são categorias fixas e não podem ser excluídos',
-      [{ text: 'OK' }]
+      `Tem certeza que deseja excluir o tipo "${type.nome}"?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Excluir', style: 'destructive', onPress: performDelete },
+      ]
     );
   };
 
   const toggleStatus = (type: Type) => {
+    const newStatus = !type.ativo;
+    const action = newStatus ? 'ativar' : 'desativar';
+
+    const performToggle = async () => {
+         try {
+            await typeService.update(type.id, { ativo: newStatus });
+            setTypes(prev => prev.map(t => 
+              t.id === type.id ? { ...t, ativo: newStatus } : t
+            ));
+            showMessage('success', `Tipo ${newStatus ? 'ativado' : 'desativado'} com sucesso!`);
+          } catch (error) {
+            console.error('Erro ao alterar status:', error);
+            showMessage('error', 'Erro ao alterar status do tipo.');
+          }
+    };
+
+    if (Platform.OS === 'web') {
+        if (confirm(`Deseja ${action} o tipo "${type.nome}"?`)) {
+            performToggle();
+        }
+        return;
+    }
+    
     Alert.alert(
       'Alterar Status',
-      'Tipos são categorias fixas e não podem ter status alterado',
-      [{ text: 'OK' }]
+      `Deseja ${action} o tipo "${type.nome}"?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Confirmar', onPress: performToggle },
+      ]
     );
+  };
+
+  const showMessage = (type: 'success' | 'error', text: string) => {
+    setMessage({ type, text });
+    setTimeout(() => setMessage(null), 3000);
   };
 
   const renderTypeItem = ({ item }: { item: Type }) => (
@@ -195,6 +248,11 @@ export default function ListagemTiposScreen() {
           <Ionicons name="add" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
+      {message && (
+        <View style={[styles.messageBanner, message.type === 'error' ? styles.errorBanner : styles.successBanner]}>
+          <Text style={styles.messageText}>{message.text}</Text>
+        </View>
+      )}
 
       {/* Search */}
       <View style={styles.searchContainer}>
@@ -440,5 +498,27 @@ const styles = StyleSheet.create({
     color: '#888',
     textAlign: 'center',
     marginTop: 8,
+  },
+  messageBanner: {
+    padding: 12,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  successBanner: {
+    backgroundColor: '#E8F5E8',
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  errorBanner: {
+    backgroundColor: '#FFEBEE',
+    borderWidth: 1,
+    borderColor: '#F44336',
+  },
+  messageText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
   },
 });

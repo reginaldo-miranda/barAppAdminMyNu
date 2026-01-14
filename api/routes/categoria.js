@@ -7,7 +7,6 @@ const router = express.Router();
 router.get('/list', async (req, res) => {
   try {
     const categorias = await prisma.categoria.findMany({
-      where: { ativo: true },
       orderBy: { nome: 'asc' },
     });
     res.json(categorias);
@@ -92,6 +91,19 @@ router.delete('/delete/:id', async (req, res) => {
     const id = Number(idStr);
     if (!Number.isInteger(id)) {
       return res.status(400).json({ error: 'ID inválido' });
+    }
+
+    // Verificar se existem produtos vinculados a esta categoria
+    const produtosCount = await prisma.product.count({
+      where: {
+        categoriaId: id,
+      }
+    });
+
+    if (produtosCount > 0) {
+      return res.status(400).json({ 
+        error: 'Não é possível excluir: Categoria possui produtos vinculados.' 
+      });
     }
 
     await prisma.categoria.update({

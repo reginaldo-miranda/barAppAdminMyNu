@@ -7,7 +7,6 @@ const router = express.Router();
 router.get('/list', async (req, res) => {
   try {
     const tipos = await prisma.tipo.findMany({
-      where: { ativo: true },
       orderBy: { nome: 'asc' },
     });
     res.json(tipos);

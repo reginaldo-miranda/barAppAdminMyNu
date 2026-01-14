@@ -9,6 +9,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Switch,
+  Platform,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -35,6 +36,28 @@ export default function CadastroUnidadeScreen() {
     descricao: '',
     ativo: true,
   });
+  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  const showMessage = (type: 'success' | 'error', text: string) => {
+    setMessage({ type, text });
+    
+    // Feedback explícito para Web
+    if (Platform.OS === 'web' && type === 'success') {
+        setTimeout(() => {
+             alert(text);
+             router.back();
+        }, 100);
+        return;
+    }
+
+    if (type === 'success') {
+        setTimeout(() => {
+            router.back();
+        }, 1500);
+    } else {
+        setTimeout(() => setMessage(null), 4000);
+    }
+  };
 
   // Remover retorno condicional por permissão antes dos hooks
   // if (!hasPermission('produtos')) {
@@ -79,12 +102,12 @@ export default function CadastroUnidadeScreen() {
 
   const handleSave = async () => {
     if (!formData.nome.trim()) {
-      Alert.alert('Erro', 'Nome da unidade é obrigatório');
+      showMessage('error', 'Nome da unidade é obrigatório');
       return;
     }
 
     if (!formData.sigla.trim()) {
-      Alert.alert('Erro', 'Sigla da unidade é obrigatória');
+      showMessage('error', 'Sigla da unidade é obrigatória');
       return;
     }
 
@@ -99,18 +122,14 @@ export default function CadastroUnidadeScreen() {
 
       if (isEditing && unidadeId) {
         await unidadeMedidaService.update(unidadeId, unitData);
-        Alert.alert('Sucesso', 'Unidade de medida atualizada com sucesso!', [
-          { text: 'OK', onPress: () => router.back() },
-        ]);
+        showMessage('success', 'Unidade de medida atualizada com sucesso!');
       } else {
         await unidadeMedidaService.create(unitData);
-        Alert.alert('Sucesso', 'Unidade de medida cadastrada com sucesso!', [
-          { text: 'OK', onPress: () => router.back() },
-        ]);
+        showMessage('success', 'Unidade de medida cadastrada com sucesso!');
       }
     } catch (error) {
       console.error('Erro ao salvar unidade:', error);
-      Alert.alert('Erro', 'Erro ao salvar unidade de medida. Verifique sua conexão e tente novamente.');
+      showMessage('error', 'Erro ao salvar unidade de medida. Verifique sua conexão.');
     } finally {
       setLoading(false);
     }
@@ -145,6 +164,12 @@ export default function CadastroUnidadeScreen() {
           <Text style={styles.headerTitle}>{isEditing ? 'Editar Unidade' : 'Cadastrar Unidade'}</Text>
           <View style={styles.headerSpacer} />
         </View>
+
+      {message && (
+        <View style={[styles.messageBanner, message.type === 'error' ? styles.errorBanner : styles.successBanner]}>
+          <Text style={styles.messageText}>{message.text}</Text>
+        </View>
+      )}
 
         {initialLoading && (
           <View style={{ padding: 16 }}>
@@ -349,8 +374,32 @@ const styles = StyleSheet.create({
   },
   accessDeniedSubtext: {
     fontSize: 16,
-    color: '#888',
-    textAlign: 'center',
+    color: '#666',
     marginTop: 8,
+    textAlign: 'center',
+  },
+
+  messageBanner: {
+    padding: 15,
+    margin: 16,
+    marginBottom: 0,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successBanner: {
+    backgroundColor: '#E8F5E8',
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  errorBanner: {
+    backgroundColor: '#FFEBEE',
+    borderWidth: 1,
+    borderColor: '#F44336',
+  },
+  messageText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
   },
 });

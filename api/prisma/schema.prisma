@@ -219,6 +219,7 @@ model ProductSetorImpressao {
   setor     SetorImpressao @relation(fields: [setorId], references: [id], onDelete: Cascade)
 
   @@id([productId, setorId])
+  @@index([setorId], map: "ProductSetorImpressao_setorId_fkey")
 }
 
 model Categoria {

@@ -9,6 +9,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Switch,
+  Platform,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -33,6 +34,29 @@ export default function CadastroCategoriaScreen() {
     descricao: '',
     ativo: true,
   });
+  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  const showMessage = (type: 'success' | 'error', text: string) => {
+    setMessage({ type, text });
+    
+    // Feedback explícito para Web (pedido do usuário)
+    if (Platform.OS === 'web' && type === 'success') {
+        setTimeout(() => {
+             alert(text); // Trava a execução até o OK
+             router.back();
+        }, 100);
+        return;
+    }
+
+    // Se for sucesso (Mobile), volta após 1.5s
+    if (type === 'success') {
+        setTimeout(() => {
+            router.back();
+        }, 1500);
+    } else {
+        setTimeout(() => setMessage(null), 4000);
+    }
+  };
 
   // Carregar dados da categoria para edição
   useEffect(() => {
@@ -94,7 +118,7 @@ export default function CadastroCategoriaScreen() {
 
   const handleSave = async () => {
     if (!formData.nome.trim()) {
-      Alert.alert('Erro', 'Nome da categoria é obrigatório');
+      showMessage('error', 'Nome da categoria é obrigatório');
       return;
     }
 
@@ -115,19 +139,11 @@ export default function CadastroCategoriaScreen() {
         await categoryService.create(categoryData);
       }
       
-      Alert.alert(
-        'Sucesso',
-        isEditing ? 'Categoria atualizada com sucesso!' : 'Categoria cadastrada com sucesso!',
-        [
-          {
-            text: 'OK',
-            onPress: () => router.back(),
-          },
-        ]
-      );
+      showMessage('success', isEditing ? 'Categoria atualizada!' : 'Categoria criada!');
+      
     } catch (error) {
       console.error('Erro ao salvar categoria:', error);
-      Alert.alert('Erro', 'Erro ao salvar categoria. Verifique sua conexão e tente novamente.');
+      showMessage('error', 'Erro ao salvar. Verifique conexao.');
     } finally {
       setLoading(false);
     }
@@ -155,6 +171,12 @@ export default function CadastroCategoriaScreen() {
         </Text>
         <View style={styles.headerSpacer} />
       </View>
+
+      {message && (
+        <View style={[styles.messageBanner, message.type === 'error' ? styles.errorBanner : styles.successBanner]}>
+          <Text style={styles.messageText}>{message.text}</Text>
+        </View>
+      )}
 
       <ScrollView style={styles.content}>
         <View style={styles.form}>
@@ -229,6 +251,29 @@ export default function CadastroCategoriaScreen() {
 }
 
 const styles = StyleSheet.create({
+  messageBanner: {
+    padding: 15,
+    margin: 16,
+    marginBottom: 0,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successBanner: {
+    backgroundColor: '#E8F5E8',
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  errorBanner: {
+    backgroundColor: '#FFEBEE',
+    borderWidth: 1,
+    borderColor: '#F44336',
+  },
+  messageText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',

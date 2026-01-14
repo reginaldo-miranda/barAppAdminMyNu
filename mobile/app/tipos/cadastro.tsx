@@ -9,6 +9,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Switch,
+  Platform,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -33,20 +34,56 @@ export default function CadastroTipoScreen() {
     descricao: '',
     ativo: true,
   });
+  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  const showMessage = (type: 'success' | 'error', text: string) => {
+    setMessage({ type, text });
+    
+    // Feedback explícito para Web
+    if (Platform.OS === 'web' && type === 'success') {
+        setTimeout(() => {
+             alert(text);
+             router.back();
+        }, 100);
+        return;
+    }
+
+    if (type === 'success') {
+        setTimeout(() => {
+            router.back();
+        }, 1500);
+    } else {
+        setTimeout(() => setMessage(null), 4000);
+    }
+  };
 
   React.useEffect(() => {
+
     const loadType = async () => {
       if (!isEditing || !typeId) return;
       try {
         setInitialLoading(true);
-        const response = await typeService.getById(typeId);
-        const type = response?.data ?? response;
-        if (type) {
+        setInitialLoading(true);
+        // Strategy change: use getAll + find (more robust as confirmed in Unidades)
+        const allTypes = await typeService.getAll();
+        
+        let typeList: any[] = [];
+        if (Array.isArray(allTypes)) {
+          typeList = allTypes;
+        } else if (allTypes?.data && Array.isArray(allTypes.data)) {
+          typeList = allTypes.data;
+        }
+
+        const foundType = typeList.find((t: any) => Number(t.id) === Number(typeId));
+        
+        if (foundType) {
           setFormData({
-            nome: type.nome || '',
-            descricao: type.descricao || '',
-            ativo: type.ativo ?? true,
+            nome: foundType.nome || '',
+            descricao: foundType.descricao || '',
+            ativo: foundType.ativo ?? true,
           });
+        } else {
+             console.warn(`Tipo ID ${typeId} não encontrado na lista.`);
         }
       } catch (error) {
         console.error('Erro ao carregar tipo:', error);
@@ -72,7 +109,7 @@ export default function CadastroTipoScreen() {
 
   const handleSave = async () => {
     if (!formData.nome.trim()) {
-      Alert.alert('Erro', 'Nome do tipo é obrigatório');
+      showMessage('error', 'Nome do tipo é obrigatório');
       return;
     }
 
@@ -86,18 +123,14 @@ export default function CadastroTipoScreen() {
 
       if (isEditing && typeId) {
         await typeService.update(typeId, typeData);
-        Alert.alert('Sucesso', 'Tipo atualizado com sucesso!', [
-          { text: 'OK', onPress: () => router.back() },
-        ]);
+        showMessage('success', 'Tipo atualizado com sucesso!');
       } else {
         await typeService.create(typeData);
-        Alert.alert('Sucesso', 'Tipo cadastrado com sucesso!', [
-          { text: 'OK', onPress: () => router.back() },
-        ]);
+        showMessage('success', 'Tipo cadastrado com sucesso!');
       }
     } catch (error) {
       console.error('Erro ao salvar tipo:', error);
-      Alert.alert('Erro', 'Erro ao salvar tipo. Verifique sua conexão e tente novamente.');
+      showMessage('error', 'Erro ao salvar tipo. Verifique sua conexão.');
     } finally {
       setLoading(false);
     }
@@ -123,6 +156,12 @@ export default function CadastroTipoScreen() {
         <Text style={styles.headerTitle}>{isEditing ? 'Editar Tipo' : 'Cadastrar Tipo'}</Text>
         <View style={styles.headerSpacer} />
       </View>
+
+      {message && (
+        <View style={[styles.messageBanner, message.type === 'error' ? styles.errorBanner : styles.successBanner]}>
+          <Text style={styles.messageText}>{message.text}</Text>
+        </View>
+      )}
 
       {initialLoading && (
         <View style={{ padding: 16 }}>
@@ -316,5 +355,29 @@ const styles = StyleSheet.create({
     color: '#888',
     textAlign: 'center',
     marginTop: 8,
+  },
+
+  messageBanner: {
+    padding: 15,
+    margin: 16,
+    marginBottom: 0,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successBanner: {
+    backgroundColor: '#E8F5E8',
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  errorBanner: {
+    backgroundColor: '#FFEBEE',
+    borderWidth: 1,
+    borderColor: '#F44336',
+  },
+  messageText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
   },
 });

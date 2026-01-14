@@ -22,8 +22,8 @@ router.get('/list', async (req, res) => {
     try {
       const hasPrinter = await hasPrinterIdColumn(prisma);
       const sql = hasPrinter
-        ? 'SELECT id, nome, descricao, modoEnvio, whatsappDestino, printerId, ativo, dataInclusao FROM `SetorImpressao` WHERE `ativo` = true ORDER BY `nome` ASC'
-        : 'SELECT id, nome, descricao, modoEnvio, whatsappDestino, ativo, dataInclusao FROM `SetorImpressao` WHERE `ativo` = true ORDER BY `nome` ASC';
+        ? 'SELECT id, nome, descricao, modoEnvio, whatsappDestino, printerId, ativo, dataInclusao FROM `SetorImpressao` ORDER BY `nome` ASC'
+        : 'SELECT id, nome, descricao, modoEnvio, whatsappDestino, ativo, dataInclusao FROM `SetorImpressao` ORDER BY `nome` ASC';
       const rows = await prisma.$queryRawUnsafe(sql);
       res.json({ success: true, data: rows });
     } catch (_e) {
@@ -188,7 +188,7 @@ router.delete('/delete/:id', async (req, res) => {
     if (!Number.isInteger(id) || id <= 0) {
       return res.status(400).json({ error: 'ID inválido' });
     }
-    await prisma.$executeRawUnsafe(`UPDATE \`SetorImpressao\` SET ativo = 0 WHERE id = ${id}`);
+    await prisma.$executeRawUnsafe(`DELETE FROM \`SetorImpressao\` WHERE id = ${id}`);
     res.json({ message: 'Setor removido com sucesso' });
   } catch (error) {
     res.status(500).json({ error: 'Erro ao remover setor' });

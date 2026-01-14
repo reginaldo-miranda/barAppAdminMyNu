@@ -435,8 +435,8 @@ export const customerService = {
   getAll: () => api.get('/customer/list'),
   getById: (id) => api.get(`/customer/${id}`),
   create: (data) => api.post('/customer/create', data),
-  update: (id, data) => api.put(`/customer/${id}`, data),
-  delete: (id) => api.delete(`/customer/${id}`),
+  update: (id, data) => api.put(`/customer/update/${id}`, data),
+  delete: (id) => api.delete(`/customer/delete/${id}`),
 };
 
 export const productService = {

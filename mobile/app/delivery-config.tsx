@@ -191,9 +191,10 @@ export default function DeliveryConfigScreen() {
       await companyService.save(payload);
       showFeedback('Sucesso', 'Configurações de delivery salvas!', 'success');
       // router.back(); 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao salvar:', error);
-      showFeedback('Erro', 'Falha ao salvar. Verifique se o servidor está rodando.', 'error');
+      const msg = error?.response?.data?.error || error?.message || 'Falha ao salvar. Verifique se o servidor está rodando.';
+      showFeedback('Erro', msg, 'error');
     } finally {
       setSaving(false);
     }

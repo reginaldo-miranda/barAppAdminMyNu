@@ -32,16 +32,33 @@ export default function CadastroSetorScreen() {
   const loadRecord = async (recordId: string) => {
     setLoadingRecord(true);
     try {
-      const response = await setorImpressaoService.getById(recordId);
-      const s = response.data;
-      setFormData({ nome: s.nome, descricao: s.descricao || '', modoEnvio: (s.modoEnvio || 'impressora'), whatsappDestino: s.whatsappDestino || '', ativo: !!s.ativo });
-      setSelectedPrinterId(s.printerId ? String(s.printerId) : '');
+      // Estratégia mais robusta: Carregar todos e filtrar localmente
+      const response = await setorImpressaoService.list();
+      const body = response?.data;
+      const list = Array.isArray(body) ? body : (Array.isArray(body?.data) ? body.data : []);
+      
+      const s = list.find((item: any) => String(item.id) === String(recordId));
+
+      if (s) {
+        setFormData({ 
+            nome: s.nome, 
+            descricao: s.descricao || '', 
+            modoEnvio: (s.modoEnvio || 'impressora'), 
+            whatsappDestino: s.whatsappDestino || '', 
+            ativo: s.ativo ?? true 
+        });
+        setSelectedPrinterId(s.printerId ? String(s.printerId) : '');
+      } else {
+         Alert.alert('Erro', 'Setor não encontrado.');
+         router.back();
+      }
     } catch (error) {
+      console.error('Erro ao carregar setor:', error);
       Alert.alert('Erro', 'Não foi possível carregar os dados do setor.');
       try {
-        router.replace('/setores/listagem' as any);
+        router.back();
       } catch {
-        // silencioso: evitar warning GO_BACK quando não há histórico
+        // silencioso
       }
     } finally { setLoadingRecord(false); }
   };
@@ -112,9 +129,15 @@ export default function CadastroSetorScreen() {
         await setorImpressaoService.create(payload);
         setSaveSuccess(true);
         Alert.alert('Sucesso', 'Setor de impressão gravado com sucesso!');
-        setTimeout(() => setSaveSuccess(false), 3000);
-        setFormData({ nome: '', descricao: '', modoEnvio: 'impressora', whatsappDestino: '', ativo: true });
-        setSelectedPrinterId('');
+        setTimeout(() => {
+            setSaveSuccess(false);
+            setFormData({ nome: '', descricao: '', modoEnvio: 'impressora', whatsappDestino: '', ativo: true });
+            setSelectedPrinterId('');
+            try {
+                // Navegar de volta para a lista para forçar refresh
+                 router.replace('/setores/listagem' as any);
+            } catch {}
+        }, 1000);
       }
     } catch (error) {
       try {

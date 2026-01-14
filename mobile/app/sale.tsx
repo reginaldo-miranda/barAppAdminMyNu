@@ -409,7 +409,13 @@ export default function SaleScreen() {
       // Auto-fill delivery address if empty and client has address
       // Also if IS delivery mode or we want to prompt?
       if (!deliveryAddress && client.endereco) {
-          const fullAddr = `${client.endereco}, ${client.numero || ''} - ${client.bairro || ''}, ${client.cidade || ''}`;
+          const parts = [
+              client.endereco,
+              client.cidade,
+              client.estado
+          ].filter(p => p && p.trim().length > 0);
+          
+          const fullAddr = parts.join(', ');
           setDeliveryAddress(fullAddr);
           newAddress = fullAddr;
       }
@@ -1161,7 +1167,10 @@ export default function SaleScreen() {
                     justifyContent: 'center',
                     gap: 8
                 }}
-                onPress={() => setDeliveryModalVisible(true)}
+                onPress={() => {
+                    setIsDelivery(true);
+                    setDeliveryModalVisible(true);
+                }}
              >
                 <Ionicons name="bicycle" size={24} color={isDelivery ? '#fff' : '#FF9800'} />
                 <Text style={{ 

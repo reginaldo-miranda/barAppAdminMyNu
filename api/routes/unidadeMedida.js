@@ -7,7 +7,6 @@ const router = express.Router();
 router.get('/list', async (req, res) => {
   try {
     const unidades = await prisma.unidadeMedida.findMany({
-      where: { ativo: true },
       orderBy: { nome: 'asc' },
     });
     res.json(unidades);
