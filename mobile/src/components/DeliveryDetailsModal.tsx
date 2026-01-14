@@ -9,7 +9,8 @@ import {
     Switch,
     ScrollView,
     Platform,
-    Alert
+    Alert,
+    Linking
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
@@ -71,6 +72,11 @@ const DeliveryDetailsModal: React.FC<DeliveryDetailsModalProps> = ({
     GOOGLE_API_KEY
 }) => {
     const [cep, setCep] = useState('');
+    const [addressListModalVisible, setAddressListModalVisible] = useState(false);
+    const [addressList, setAddressList] = useState<any[]>([]);
+    const [loadingList, setLoadingList] = useState(false);
+    
+    // ... existing handleCepSearch ...
     
     const handleCepSearch = async () => {
         const cleanCep = cep.replace(/\D/g, '');
@@ -103,6 +109,83 @@ const DeliveryDetailsModal: React.FC<DeliveryDetailsModalProps> = ({
             Alert.alert('Erro', 'Falha ao buscar CEP.');
         }
     };
+
+    const fetchDrivingDistance = async (lat1: number, lon1: number, lat2: number, lon2: number) => {
+        try {
+            const url = `http://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=false`;
+            const res = await fetch(url);
+            const json = await res.json();
+            
+            if (json.code === 'Ok' && json.routes && json.routes.length > 0) {
+                const meters = json.routes[0].distance;
+                const km = parseFloat((meters / 1000).toFixed(2));
+                return km;
+            }
+        } catch (error) {
+            console.error('Erro OSRM:', error);
+        }
+        return null;
+    };
+    
+    const handleListSearch = async () => {
+        if (!deliveryAddress) {
+             Platform.OS === 'web' ? window.alert('Digite parte do endereço') : Alert.alert('Erro', 'Digite parte do endereço');
+             return;
+        }
+        
+        setLoadingList(true);
+        try {
+            const query = encodeURIComponent(deliveryAddress);
+            const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&addressdetails=1&limit=15&countrycodes=br`;
+            const res = await fetch(url, { headers: { 'User-Agent': 'BarApp/1.0 (admin@barapp.com)' }});
+            const data = await res.json();
+            
+            if (Array.isArray(data)) {
+                setAddressList(data);
+                setAddressListModalVisible(true);
+            } else {
+                 Platform.OS === 'web' ? window.alert('Nenhum endereço encontrado') : Alert.alert('Erro', 'Nenhum endereço encontrado');
+            }
+        } catch (error) {
+            console.error(error);
+             Platform.OS === 'web' ? window.alert('Erro ao buscar lista') : Alert.alert('Erro', 'Erro ao buscar lista');
+        } finally {
+            setLoadingList(false);
+        }
+    };
+    
+    const handleSelectAddressFromList = (item: any) => {
+        const lat = parseFloat(item.lat);
+        const lon = parseFloat(item.lon);
+        
+        setDeliveryAddress(item.display_name);
+        setDeliveryCoords({ lat, lng: lon });
+        
+         if (companyConfig?.latitude && companyConfig?.longitude) {
+            const straightLine = calculateDistance(Number(companyConfig.latitude), Number(companyConfig.longitude), lat, lon);
+            const estRoadDist = parseFloat((straightLine * 1.3).toFixed(2));
+            setDeliveryDistance(estRoadDist);
+            
+            if (Platform.OS === 'web') {
+                 // Pequeno delay para alert não bloquear render
+                 setTimeout(() => window.alert(`Endereço selecionado!\nDistância Estimada: ${estRoadDist} km\nCalculando rota real...`), 100);
+            } else {
+                 Alert.alert('Sucesso', `Endereço selecionado!\nDistância Estimada: ${estRoadDist} km\nCalculando rota real...`);
+            }
+
+            // Busca Rota Real em Background
+            fetchDrivingDistance(Number(companyConfig.latitude), Number(companyConfig.longitude), lat, lon).then(realDist => {
+                if (realDist !== null) {
+                    setDeliveryDistance(realDist);
+                    if (Platform.OS === 'web') {
+                        setTimeout(() => window.alert(`Rota Atualizada!\nDistância Real: ${realDist} km`), 500);
+                    }
+                }
+            });
+        }
+        
+        setAddressListModalVisible(false);
+    };
     
     const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
         const R = 6371; 
@@ -131,6 +214,13 @@ const DeliveryDetailsModal: React.FC<DeliveryDetailsModalProps> = ({
             const straightLine = calculateDistance(Number(companyConfig.latitude), Number(companyConfig.longitude), lat, lng);
             const estRoadDist = parseFloat((straightLine * 1.3).toFixed(2));
             setDeliveryDistance(estRoadDist);
+
+            // Busca Rota Real
+            fetchDrivingDistance(Number(companyConfig.latitude), Number(companyConfig.longitude), lat, lng).then(realDist => {
+                if (realDist !== null) {
+                    setDeliveryDistance(realDist);
+                }
+            });
         }
     };
 
@@ -452,7 +542,23 @@ const DeliveryDetailsModal: React.FC<DeliveryDetailsModalProps> = ({
                                                         const estRoadDist = parseFloat((straightLine * 1.3).toFixed(2));
                                                         setDeliveryDistance(estRoadDist);
                                                         
-                                                        if (!isApprox) safeAlert('Endereço Encontrado', `Distância: ${estRoadDist} km`);
+                                                        if (!isApprox) {
+                                                           if (Platform.OS === 'web') {
+                                                               setTimeout(() => window.alert(`Endereço Encontrado!\nDistância Estimada: ${estRoadDist} km\nCalculando rota real...`), 100);
+                                                           } else {
+                                                               Alert.alert('Sucesso', `Endereço Encontrado!\nDistância Estimada: ${estRoadDist} km\nCalculando rota real...`);
+                                                           }
+                                                        }
+
+                                                        // Busca Rota Real
+                                                        fetchDrivingDistance(Number(companyConfig.latitude), Number(companyConfig.longitude), lat, lon).then(realDist => {
+                                                            if (realDist !== null) {
+                                                                setDeliveryDistance(realDist);
+                                                                if (!isApprox && Platform.OS === 'web') {
+                                                                    setTimeout(() => window.alert(`Rota Atualizada!\nDistância Real: ${realDist} km`), 500);
+                                                                }
+                                                            }
+                                                        });
                                                     } else {
                                                         safeAlert('Não encontrado', 'Tente verificar a formatação (Rua, Número, Cidade - UF).');
                                                     }
@@ -464,6 +570,31 @@ const DeliveryDetailsModal: React.FC<DeliveryDetailsModalProps> = ({
                                         >
                                             <Text style={styles.webSearchButtonText}>Buscar</Text>
                                         </TouchableOpacity>
+                                        
+                                        <TouchableOpacity 
+                                            style={[styles.webSearchButton, { backgroundColor: '#673AB7', marginLeft: 10 }]}
+                                            onPress={handleListSearch}
+                                        >
+                                            <Text style={styles.webSearchButtonText}>Listagem</Text>
+                                        </TouchableOpacity>
+
+                                        <TouchableOpacity 
+                                            style={[styles.webSearchButton, { backgroundColor: '#4CAF50', marginLeft: 10 }]}
+                                            onPress={() => {
+                                                const query = deliveryCoords 
+                                                    ? `${deliveryCoords.lat},${deliveryCoords.lng}` 
+                                                    : encodeURIComponent(deliveryAddress || '');
+                                                if (query) {
+                                                    Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${query}`);
+                                                } else {
+                                                    Platform.OS === 'web' ? window.alert('Digite um endereço para abrir no Maps') : Alert.alert('Erro', 'Digite um endereço');
+                                                }
+                                            }}
+                                        >
+                                            <Ionicons name="map" size={20} color="#fff" />
+                                        </TouchableOpacity>
+                                        
+
                                     </View>
                                 )}
 
@@ -529,6 +660,53 @@ const DeliveryDetailsModal: React.FC<DeliveryDetailsModalProps> = ({
                     </View>
                 </View>
             </View>
+            
+             {/* Modal de Listagem de Endereços */}
+            <Modal
+                visible={addressListModalVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setAddressListModalVisible(false)}
+            >
+                <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.8)' }]}>
+                    <View style={[styles.modalContent, { height: '80%' }]}>
+                         <View style={styles.header}>
+                            <Text style={styles.title}>Selecione o Endereço</Text>
+                            <TouchableOpacity onPress={() => setAddressListModalVisible(false)} style={styles.closeButton}>
+                                <Ionicons name="close" size={24} color="#666" />
+                            </TouchableOpacity>
+                        </View>
+                        
+                        {loadingList ? (
+                             <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                                 <Text>Carregando...</Text>
+                             </View>
+                        ) : (
+                            <ScrollView contentContainerStyle={{ padding: 16 }}>
+                                {addressList.map((item, index) => (
+                                    <TouchableOpacity 
+                                        key={index} 
+                                        style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: '#eee' }}
+                                        onPress={() => handleSelectAddressFromList(item)}
+                                    >
+                                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#333' }}>
+                                            {item.display_name.split(',')[0]}
+                                        </Text>
+                                        <Text style={{ fontSize: 14, color: '#666', marginTop: 4 }}>
+                                            {item.display_name}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                                {addressList.length === 0 && (
+                                     <Text style={{ textAlign: 'center', marginTop: 20, color: '#888' }}>
+                                         Nenhum resultado encontrado.
+                                     </Text>
+                                )}
+                            </ScrollView>
+                        )}
+                    </View>
+                </View>
+            </Modal>
         </Modal>
     );
 };
