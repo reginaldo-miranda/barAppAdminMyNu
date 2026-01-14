@@ -6,12 +6,14 @@ const router = express.Router();
 // Rota para criar cliente
 router.post("/create", async (req, res) => {
   try {
-    const { nome, endereco, cidade, estado, fone, cpf, rg, dataNascimento, ativo } = req.body;
+    const { nome, endereco, cidade, estado, fone, cep, cpf, rg, dataNascimento, ativo } = req.body;
 
-    // Verificar se CPF já existe
-    const customerExistente = await prisma.customer.findUnique({ where: { cpf } });
-    if (customerExistente) {
-      return res.status(400).json({ error: "CPF já cadastrado" });
+    // Verificar se CPF já existe (se informado)
+    if (cpf) {
+        const customerExistente = await prisma.customer.findUnique({ where: { cpf } });
+        if (customerExistente) {
+          return res.status(400).json({ error: "CPF já cadastrado" });
+        }
     }
 
     const novoCustomer = await prisma.customer.create({
@@ -21,7 +23,8 @@ router.post("/create", async (req, res) => {
         cidade,
         estado,
         fone,
-        cpf,
+        cep,
+        cpf: cpf || null,
         rg,
         dataNascimento,
         ativo: ativo !== undefined ? ativo : true,
@@ -74,17 +77,19 @@ router.get("/:id", async (req, res) => {
 router.put("/update/:id", async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const { nome, endereco, cidade, estado, fone, cpf, rg, dataNascimento, ativo } = req.body;
+    const { nome, endereco, cidade, estado, fone, cep, cpf, rg, dataNascimento, ativo } = req.body;
 
     // Verificar se CPF já existe em outro cliente
-    const customerExistente = await prisma.customer.findFirst({ where: { cpf, id: { not: id } } });
-    if (customerExistente) {
-      return res.status(400).json({ error: "CPF já cadastrado para outro cliente" });
+    if (cpf) {
+        const customerExistente = await prisma.customer.findFirst({ where: { cpf, id: { not: id } } });
+        if (customerExistente) {
+            return res.status(400).json({ error: "CPF já cadastrado para outro cliente" });
+        }
     }
 
     const customerAtualizado = await prisma.customer.update({
       where: { id },
-      data: { nome, endereco, cidade, estado, fone, cpf, rg, dataNascimento, ativo },
+      data: { nome, endereco, cidade, estado, fone, cep, cpf: cpf || null, rg, dataNascimento, ativo },
     });
 
     res.json({ message: "Cliente atualizado com sucesso", customer: customerAtualizado });

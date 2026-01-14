@@ -26,6 +26,7 @@ interface Customer {
   cidade: string;
   estado: string;
   fone: string;
+  cep?: string;
   cpf: string;
   rg: string;
   dataNascimento: Date;
@@ -48,6 +49,7 @@ export default function AdminClientesScreen() {
     cidade: '',
     estado: '',
     fone: '',
+    cep: '',
     cpf: '',
     rg: '',
     dataNascimento: '',
@@ -139,11 +141,12 @@ export default function AdminClientesScreen() {
   const handleEditCustomer = (customer: Customer) => {
     setEditingCustomer(customer);
     setFormData({
-      nome: customer.nome || '',
+      nome: customer.nome,
       endereco: customer.endereco || '',
       cidade: customer.cidade || '',
       estado: customer.estado || '',
       fone: customer.fone || '',
+      cep: customer.cep || '',
       cpf: customer.cpf || '',
       rg: customer.rg || '',
       dataNascimento: customer.dataNascimento ? 
@@ -187,6 +190,7 @@ export default function AdminClientesScreen() {
       cidade: '',
       estado: '',
       fone: '',
+      cep: '',
       cpf: '',
       rg: '',
       dataNascimento: '',
@@ -210,6 +214,29 @@ export default function AdminClientesScreen() {
       return phone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3');
     }
     return phone.replace(/(\d{2})(\d{4})(\d{4})/, '($1) $2-$3');
+  };
+
+  const fetchAddressByCep = async (cep: string) => {
+      const cleanCep = cep.replace(/\D/g, '');
+      if (cleanCep.length !== 8) return;
+      
+      try {
+          const response = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
+          const data = await response.json();
+          if (!data.erro) {
+              setFormData(prev => ({
+                  ...prev,
+                  endereco: data.logradouro ? `${data.logradouro}, ${data.bairro}` : prev.endereco,
+                  cidade: data.localidade || prev.cidade,
+                  estado: data.uf || prev.estado
+              }));
+          } else {
+              if (Platform.OS === 'web') window.alert('CEP não encontrado');
+              else safeAlert('Erro', 'CEP não encontrado');
+          }
+      } catch (e) {
+          console.error(e);
+      }
   };
 
   const filteredCustomers = customers.filter(customer =>
@@ -423,6 +450,22 @@ export default function AdminClientesScreen() {
                   placeholder="YYYY-MM-DD"
                 />
               </View>
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>CEP</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.cep}
+                onChangeText={(text) => {
+                    const newCep = text.replace(/\D/g, '').slice(0, 8);
+                    setFormData({ ...formData, cep: newCep });
+                    if (newCep.length === 8) fetchAddressByCep(newCep);
+                }}
+                placeholder="00000-000"
+                keyboardType="numeric"
+                maxLength={9}
+              />
             </View>
 
             <View style={styles.formGroup}>

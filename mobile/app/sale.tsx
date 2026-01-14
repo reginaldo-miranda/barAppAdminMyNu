@@ -86,6 +86,11 @@ export default function SaleScreen() {
   const [searchClientQuery, setSearchClientQuery] = useState('');
   const [showEmployeeModal, setShowEmployeeModal] = useState(false);
 
+  // Quick Register State
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [registerForm, setRegisterForm] = useState({ nome: '', fone: '', endereco: '', cidade: '', estado: '' });
+  const [registerLoading, setRegisterLoading] = useState(false);
+
   // API Key for Maps
   const GOOGLE_API_KEY = Constants.expoConfig?.android?.config?.googleMaps?.apiKey || Constants.expoConfig?.ios?.config?.googleMapsApiKey || '';
 
@@ -433,6 +438,7 @@ export default function SaleScreen() {
       }
   };
 
+
   const handleSelectEntregador = async (emp: any) => {
       setSelectedEntregador(emp);
       setShowEmployeeModal(false);
@@ -442,6 +448,50 @@ export default function SaleScreen() {
               const res = await saleService.update(sale._id, { entregadorId: emp.id });
               setSale(res.data);
           } catch (e) { console.error('Erro ao atualizar entregador', e); }
+      }
+  };
+
+  const handleUseNameOnly = async (name: string) => {
+      // Cria cliente "lite" apenas com nome
+      try {
+          if (!name || name.length < 3) return;
+          const res = await customerService.create({ nome: name, fone: '', endereco: '' });
+          if (res.data && res.data.customer) {
+              handleSelectClient(res.data.customer);
+          } else {
+              Alert.alert('Erro', 'Não foi possível criar o cliente temporário.');
+          }
+      } catch (e: any) {
+          console.error(e);
+          const msg = e.response?.data?.error || e.message || 'Falha ao usar nome temporário';
+          Alert.alert('Erro', msg);
+      }
+  };
+
+  const handleRegisterClient = async () => {
+      if (!registerForm.nome) {
+          Alert.alert('Erro', 'Nome é obrigatório');
+          return;
+      }
+      setRegisterLoading(true);
+      try {
+          const res = await customerService.create(registerForm);
+          if (res.data && res.data.customer) {
+              setRegisterForm({ nome: '', fone: '', endereco: '', cidade: '', estado: '' });
+              setShowRegisterModal(false);
+              // Pequeno delay para garantir transição suave de modais
+              setTimeout(() => {
+                  handleSelectClient(res.data.customer);
+                  Platform.OS === 'web' ? window.alert('Cliente cadastrado!') : Alert.alert('Sucesso', 'Cliente cadastrado!');
+              }, 100);
+          } else {
+              Alert.alert('Erro', 'Servidor não retornou dados do cliente.');
+          }
+      } catch (e: any) {
+          const msg = e.response?.data?.error || e.message || 'Erro ao cadastrar';
+          Alert.alert('Erro', msg);
+      } finally {
+          setRegisterLoading(false);
       }
   };
 
@@ -1329,14 +1379,15 @@ export default function SaleScreen() {
                 try {
                     setLoading(true);
                     
-                    let currentSaleId = sale?._id;
+                    // Robust handling of ID
+                    let currentSaleId = sale?._id || (sale?.id ? String(sale?.id) : undefined);
 
                     // Auto-recovery
                     if (!currentSaleId && cart.length > 0) {
                         try {
                             const createRes = await saleService.create({ type: 'balcao' });
-                            if (createRes.data && createRes.data._id) {
-                                currentSaleId = createRes.data._id;
+                            if (createRes.data && (createRes.data._id || createRes.data.id)) {
+                                currentSaleId = createRes.data._id || String(createRes.data.id);
                                 for (const item of cart) {
                                     const pId = item.productId || (item.produto && (item.produto._id || item.produto.id));
                                     if (pId) {
@@ -1351,30 +1402,71 @@ export default function SaleScreen() {
                     }
 
                     if (!currentSaleId) {
-                        Platform.OS === 'web' ? window.alert('Erro: Venda não inicializada') : Alert.alert('Erro', 'Venda não inicializada');
+                        const msg = 'Erro: Venda não inicializada';
+                        Platform.OS === 'web' ? window.alert(msg) : Alert.alert('Erro', msg);
                         setLoading(false);
                         return;
                     }
+                    
+                    // Helper to parse BR numbers
+                    const toNum = (v: any) => {
+                        if (typeof v === 'string') return Number(v.replace(',', '.'));
+                        return Number(v);
+                    };
 
                     await saleService.update(currentSaleId, {
                         isDelivery: true,
                         deliveryAddress,
-                        deliveryDistance: Number(deliveryDistance),
-                        deliveryFee: Number(deliveryFee),
+                        deliveryDistance: toNum(deliveryDistance),
+                        deliveryFee: toNum(deliveryFee),
                         clienteId: selectedCliente?.id,
                         entregadorId: selectedEntregador?.id,
                         deliveryStatus: 'pending' 
                     });
                     
-                    await api.post(`/sale/${currentSaleId}/delivery-print`);
+                    const printRes = await api.post(`/sale/${currentSaleId}/delivery-print`);
                     
-                    if (Platform.OS === 'web') window.alert('Entrega lançada!');
-                    else Alert.alert('Sucesso', 'Entrega lançada!');
+                    if (printRes.data && printRes.data.pdfMode && printRes.data.content) {
+                        if (Platform.OS === 'web') {
+                            const params = `scrollbars=no,resizable=no,status=no,location=no,toolbar=no,menubar=no,
+width=400,height=600,left=100,top=100`;
+                             const win = (window as any).open('', '_blank', params);
+                             if (win) {
+                                 win.document.write(`
+                                    <html>
+                                    <head>
+                                        <title>Imprimir Comanda</title>
+                                        <style>
+                                            body { font-family: monospace; font-size: 12px; margin: 0; padding: 10px; }
+                                            pre { white-space: pre-wrap; word-break: break-all; }
+                                            @media print { @page { margin: 0; } body { margin: 0.5cm; } }
+                                        </style>
+                                    </head>
+                                    <body>
+                                    <pre>${printRes.data.content}</pre>
+                                    <script>
+                                        setTimeout(() => { window.print(); window.close(); }, 500);
+                                    </script>
+                                    </body>
+                                    </html>
+                                 `);
+                                 win.document.close();
+                             } else {
+                                 window.alert('Pop-up bloqueado. Permita pop-ups para imprimir.');
+                             }
+                        } else {
+                            Alert.alert('Sucesso', 'Venda salva. Sem impressora configurada.');
+                        }
+                    } else {
+                        if (Platform.OS === 'web') window.alert('Entrega lançada!');
+                        else Alert.alert('Sucesso', 'Entrega lançada!');
+                    }
                     
                     setDeliveryModalVisible(false);
                     router.replace('/delivery-dashboard'); 
                 } catch(e: any) {
-                    const msg = e.response?.data?.message || e.message || 'Erro desconhecido';
+                    // Fix: Backend returns { error: '...' }, not message
+                    const msg = e.response?.data?.error || e.response?.data?.message || e.message || 'Erro desconhecido';
                     console.error('Launch Error:', e);
                     Platform.OS === 'web' ? window.alert('Erro: ' + msg) : Alert.alert('Erro', msg);
                 } finally {
@@ -1526,23 +1618,24 @@ export default function SaleScreen() {
                       onChangeText={setSearchClientQuery}
                   />
                   {clients.length === 0 && searchClientQuery.length > 2 && (
-                       <TouchableOpacity style={{ padding: 10, backgroundColor: '#e3f2fd', borderRadius: 6, marginBottom: 10 }}
-                           onPress={async () => {
-                               // Quick register
-                               // Ask for phone?
-                               try {
-                                   const res = await customerService.create({ nome: searchClientQuery, fone: '' });
-                                   if (res.data) {
-                                       setClients([res.data]);
-                                       handleSelectClient(res.data);
-                                   }
-                               } catch (e) {
-                                   Alert.alert('Erro', 'Falha ao cadastrar cliente rápido');
-                               }
-                           }}
-                       >
-                           <Text style={{ color: '#2196F3', textAlign: 'center' }}>Cadastrar "{searchClientQuery}"</Text>
-                       </TouchableOpacity>
+                       <View>
+                           <TouchableOpacity style={{ padding: 12, backgroundColor: '#E3F2FD', borderRadius: 8, marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
+                               onPress={() => {
+                                   setRegisterForm({ ...registerForm, nome: searchClientQuery });
+                                   setShowRegisterModal(true);
+                               }}
+                           >
+                               <Ionicons name="person-add" size={20} color="#2196F3" style={{ marginRight: 8 }} />
+                               <Text style={{ color: '#2196F3', fontWeight: 'bold' }}>Cadastrar Completo: "{searchClientQuery}"</Text>
+                           </TouchableOpacity>
+
+                           <TouchableOpacity style={{ padding: 12, backgroundColor: '#FFF3E0', borderRadius: 8, marginBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
+                               onPress={() => handleUseNameOnly(searchClientQuery)}
+                           >
+                               <Ionicons name="text" size={20} color="#FF9800" style={{ marginRight: 8 }} />
+                               <Text style={{ color: '#FF9800', fontWeight: 'bold' }}>Usar Apenas Nome: "{searchClientQuery}"</Text>
+                           </TouchableOpacity>
+                       </View>
                   )}
                   <ScrollView>
                       {clients.map(c => (
@@ -1584,6 +1677,102 @@ export default function SaleScreen() {
                   <TouchableOpacity style={[styles.modalButton, styles.cancelButton, { marginTop: 10 }]} onPress={() => setShowEmployeeModal(false)}>
                       <Text style={styles.cancelButtonText}>Fechar</Text>
                   </TouchableOpacity>
+              </View>
+          </View>
+      </Modal>
+
+      {/* Modal Cadastro Rápido de Cliente */}
+      <Modal
+          visible={showRegisterModal}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowRegisterModal(false)}
+      >
+          <View style={styles.modalOverlay}>
+              <View style={[styles.modalContent, { maxHeight: '80%' }]}>
+                  <Text style={styles.modalTitle}>Novo Cliente</Text>
+                  <ScrollView>
+                      <Text style={styles.label}>Nome *</Text>
+                      <TextInput 
+                          style={styles.placesInput} 
+                          value={registerForm.nome}
+                          onChangeText={t => setRegisterForm({...registerForm, nome: t})}
+                      />
+                      
+                      <Text style={styles.label}>Whatsapp / Telefone</Text>
+                      <TextInput 
+                          style={styles.placesInput} 
+                          value={registerForm.fone}
+                          keyboardType="phone-pad"
+                          onChangeText={t => setRegisterForm({...registerForm, fone: t})}
+                      />
+
+                      <Text style={styles.label}>CEP (Opcional)</Text>
+                      <TextInput 
+                          style={styles.placesInput} 
+                          placeholder="Digite CEP para buscar"
+                          keyboardType="numeric"
+                          onBlur={async () => {
+                              if (registerForm.endereco?.length > 5) return; // Já tem endereço
+                              const c = (registerForm as any).cep?.replace(/\D/g,'');
+                              if(c?.length===8) {
+                                  try {
+                                      const r = await fetch(`https://viacep.com.br/ws/${c}/json/`);
+                                      const d = await r.json();
+                                      if(!d.erro) {
+                                          setRegisterForm(prev => ({
+                                              ...prev,
+                                              endereco: `${d.logradouro}, ${d.bairro}`,
+                                              cidade: d.localidade,
+                                              estado: d.uf
+                                          }));
+                                      }
+                                  } catch {}
+                              }
+                          }}
+                          onChangeText={t => setRegisterForm({...registerForm, cep: t} as any)} 
+                      />
+
+                      <Text style={styles.label}>Endereço Completo</Text>
+                      <TextInput 
+                          style={styles.placesInput} 
+                          value={registerForm.endereco}
+                          placeholder="Rua, Número, Bairro"
+                          onChangeText={t => setRegisterForm({...registerForm, endereco: t})}
+                      />
+
+                      <View style={{ flexDirection: 'row', gap: 10 }}>
+                          <View style={{ flex: 1 }}>
+                              <Text style={styles.label}>Cidade</Text>
+                              <TextInput 
+                                  style={styles.placesInput} 
+                                  value={registerForm.cidade}
+                                  onChangeText={t => setRegisterForm({...registerForm, cidade: t})}
+                              />
+                          </View>
+                          <View style={{ width: 80 }}>
+                              <Text style={styles.label}>UF</Text>
+                              <TextInput 
+                                  style={styles.placesInput} 
+                                  value={registerForm.estado}
+                                  onChangeText={t => setRegisterForm({...registerForm, estado: t})}
+                              />
+                          </View>
+                      </View>
+                  </ScrollView>
+
+                  <View style={styles.modalButtons}>
+                      <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setShowRegisterModal(false)}>
+                          <Text style={styles.cancelButtonText}>Cancelar</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                          style={[styles.modalButton, styles.confirmButton, registerLoading && { opacity: 0.7 }]} 
+                          onPress={handleRegisterClient}
+                          disabled={registerLoading}
+                      >
+                          {registerLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.confirmButtonText}>Salvar e Selecionar</Text>}
+                      </TouchableOpacity>
+                  </View>
               </View>
           </View>
       </Modal>

@@ -1443,27 +1443,7 @@ router.post('/:id/delivery-print', async (req, res) => {
 
     if (!venda) return res.status(404).json({ error: 'Venda não encontrada' });
 
-    // 1. Encontrar impressora (Tenta 'Caixa', 'Balcao' ou a primeira ativa)
-    let printer = await prisma.printer.findFirst({
-      where: { 
-        OR: [
-          { nome: { contains: 'Caixa' } },
-          { nome: { contains: 'Delivery' } },
-          { nome: { contains: 'Balcão' } }
-        ],
-        ativo: true 
-      }
-    });
-    
-    if (!printer) {
-      printer = await prisma.printer.findFirst({ where: { ativo: true } });
-    }
-
-    if (!printer) {
-      return res.status(400).json({ error: 'Nenhuma impressora ativa encontrada no sistema' });
-    }
-
-    // 2. Montar Conteúdo
+    // 2. Montar Conteúdo (Moved up)
     const pad = (str, len) => (str + ' '.repeat(len)).slice(0, len);
     const line = '-'.repeat(32);
     const dateStr = new Date().toLocaleString('pt-BR');
@@ -1523,7 +1503,28 @@ router.post('/:id/delivery-print', async (req, res) => {
     content += `TOTAL:           R$ ${totalFinal.toFixed(2).padStart(8)}\n`;
     content += `${line}\n\n\n`; // Feed
 
-    // 3. Enviar job
+    // 1. Verificar Impressora (Moved down)
+    let printer = await prisma.printer.findFirst({
+      where: { 
+        OR: [
+          { nome: { contains: 'Caixa' } },
+          { nome: { contains: 'Delivery' } },
+          { nome: { contains: 'Balcão' } }
+        ],
+        ativo: true 
+      }
+    });
+    
+    if (!printer) {
+      printer = await prisma.printer.findFirst({ where: { ativo: true } });
+    }
+
+    if (!printer) {
+      // Fallback: Retorna sucesso mas com flag para gerar PDF local
+      return res.json({ success: true, pdfMode: true, content });
+    }
+
+    // 3. Enviar job (se tiver impressora)
     await enqueuePrintJob({
         saleId: venda.id,
         productId: 0, // Placeholder

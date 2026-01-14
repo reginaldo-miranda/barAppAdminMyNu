@@ -111,7 +111,8 @@ model Customer {
   cidade         String?
   estado         String?
   fone           String?
-  cpf            String    @unique
+  cep            String?
+  cpf            String?   @unique
   rg             String?
   dataNascimento DateTime?
   ativo          Boolean   @default(true)
