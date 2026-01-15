@@ -17,6 +17,7 @@ import { saleService, mesaService, systemService } from '../../src/services/api'
 import ScreenIdentifier from '../../src/components/ScreenIdentifier';
 import { events } from '../../src/utils/eventBus'
 import { SafeIcon } from '../../components/SafeIcon';
+import WebDropdownMenu from '../../src/components/WebDropdownMenu';
 
 export default function HomeScreen() {
   const authContext = useAuth() as any;
@@ -231,6 +232,10 @@ export default function HomeScreen() {
       }
     >
       <ScreenIdentifier screenName="Home" />
+      
+      {/* Menu Dropdown - Apenas Web */}
+      {Platform.OS === 'web' && <WebDropdownMenu />}
+
       {/* Header com informações do usuário */}
       <View style={styles.header}>
         <View style={styles.userInfo}>

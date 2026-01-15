@@ -34,8 +34,15 @@ interface Customer {
   dataInclusao: Date;
 }
 
+import { router, useLocalSearchParams } from 'expo-router';
+
+// ... existing imports ...
+
 export default function AdminClientesScreen() {
   const { hasPermission } = useAuth() as any;
+  const params = useLocalSearchParams();
+  const { autoOpen, returnTo } = params;
+
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
@@ -62,7 +69,12 @@ export default function AdminClientesScreen() {
       return;
     }
     loadCustomers();
-  }, []);
+    
+    if (autoOpen === 'true') {
+        resetForm();
+        setModalVisible(true);
+    }
+  }, [autoOpen]);
 
   const loadCustomers = async () => {
     try {
@@ -130,7 +142,12 @@ export default function AdminClientesScreen() {
 
       setModalVisible(false);
       resetForm();
-      loadCustomers();
+      const currentSort = customers; // dummy usage if needed, or better:
+      loadCustomers().then(() => {
+         if (returnTo) {
+             router.back();
+         }
+      });
     } catch (error: any) {
       console.error('Erro ao salvar cliente:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Erro ao salvar cliente';

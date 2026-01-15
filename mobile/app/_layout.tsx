@@ -55,6 +55,7 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="tablet" options={{ headerShown: false }} />
           <Stack.Screen name="delivery-dashboard" options={{ headerShown: false }} />
+          <Stack.Screen name="sale" options={{ headerShown: false }} />
           <Stack.Screen name="TestScreen" options={{ title: 'Testes e Diagnóstico' }} />
         </Stack>
       </ProductProvider>

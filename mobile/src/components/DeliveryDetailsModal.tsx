@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import MapView, { Marker, Polyline } from './NativeMap';
 import Constants from 'expo-constants';
+import { router } from 'expo-router';
 
 interface DeliveryDetailsModalProps {
     visible: boolean;
@@ -261,16 +262,38 @@ const DeliveryDetailsModal: React.FC<DeliveryDetailsModalProps> = ({
                             <>
                                 {/* Client & Employee Selectors */}
                                 <View style={styles.section}>
-                                    <TouchableOpacity onPress={onSelectClient} style={styles.selectorItem}>
+                                    <View style={[styles.selectorItem, { paddingRight: 8 }]}>
                                         <Ionicons name="person" size={20} color="#666" style={{ width: 30 }} />
-                                        <View style={{ flex: 1 }}>
-                                            <Text style={styles.selectorLabel}>Cliente</Text>
-                                            <Text style={styles.selectorValue}>
-                                                {selectedCliente ? selectedCliente.nome : 'Selecionar Cliente'}
-                                            </Text>
-                                        </View>
-                                        <Ionicons name="chevron-forward" size={20} color="#ccc" />
-                                    </TouchableOpacity>
+                                        <TouchableOpacity onPress={onSelectClient} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                                            <View>
+                                                <Text style={styles.selectorLabel}>Cliente</Text>
+                                                <Text style={styles.selectorValue}>
+                                                    {selectedCliente ? selectedCliente.nome : 'Selecionar Cliente'}
+                                                </Text>
+                                            </View>
+                                            <Ionicons name="chevron-forward" size={20} color="#ccc" />
+                                        </TouchableOpacity>
+                                        
+                                        <TouchableOpacity 
+                                            style={{ 
+                                                marginLeft: 10, 
+                                                backgroundColor: '#E3F2FD', 
+                                                padding: 8, 
+                                                borderRadius: 8,
+                                                borderWidth: 1,
+                                                borderColor: '#2196F3'
+                                            }}
+                                            onPress={() => {
+                                                onClose(); // Fecha o modal atual
+                                                router.push({
+                                                    pathname: '/(tabs)/admin-clientes',
+                                                    params: { autoOpen: 'true', returnTo: 'delivery' }
+                                                });
+                                            }}
+                                        >
+                                            <Ionicons name="add" size={22} color="#2196F3" />
+                                        </TouchableOpacity>
+                                    </View>
 
                                     <TouchableOpacity onPress={onSelectEntregador} style={styles.selectorItem}>
                                         <Ionicons name="bicycle" size={20} color="#666" style={{ width: 30 }} />

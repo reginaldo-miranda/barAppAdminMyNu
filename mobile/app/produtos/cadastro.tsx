@@ -93,7 +93,7 @@ export default function CadastroProduto() {
   const [showUnidadeModal, setShowUnidadeModal] = useState(false);
   const [selectedUnidade, setSelectedUnidade] = useState<UnidadeMedida | null>(null);
   const [setores, setSetores] = useState<SetorImpressao[]>([]);
-  const [selectedSetores, setSelectedSetores] = useState<string[] | null>(null);
+  const [selectedSetores, setSelectedSetores] = useState<string[]>([]);
   const [loadingSetores, setLoadingSetores] = useState(false);
   const [showSetoresModal, setShowSetoresModal] = useState(false);
   const [temVariacao, setTemVariacao] = useState(false);
